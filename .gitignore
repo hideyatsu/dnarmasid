@@ -1,0 +1,22 @@
+# Environment
+.env
+
+# Go
+*.exe
+*.test
+*.out
+vendor/
+
+# Build output
+bin/
+
+# Media output
+volumes/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# Docker
+*.log
