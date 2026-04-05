@@ -47,6 +47,7 @@ func main() {
 		handler.Listen(quit)
 	}()
 
+	/* 
 	// ─── Goroutine 2: Consume content.ready → kirim caption ke admin
 	wg.Add(1)
 	go func() {
@@ -92,6 +93,7 @@ func main() {
 			}
 		}
 	}()
+	*/
 
 	// ─── Goroutine 4: Consume gold.scraped → kirim notifikasi awal ke admin
 	wg.Add(1)
