@@ -1,0 +1,156 @@
+version: "3.9"
+
+# ================================
+# DnarMasID — Docker Compose
+# ================================
+# Services:
+#   1. mysql          — database utama
+#   2. redis          — message queue antar service
+#   3. scheduler      — trigger pipeline harian (cron)
+#   4. scraper        — ambil harga emas dari antam
+#   5. ai-generator   — generate caption semua platform
+#   6. media-generator — buat gambar & video
+#   7. telegram-bot   — kirim hasil ke bot/channel
+
+networks:
+  dnarmasid-net:
+    driver: bridge
+
+volumes:
+  mysql-data:
+  redis-data:
+  media-data:
+
+services:
+
+  # ─────────────────────────────────────────
+  # INFRASTRUKTUR
+  # ─────────────────────────────────────────
+
+  mysql:
+    image: mysql:8.0
+    container_name: dnarmasid-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: rootsecret
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      TZ: ${TZ}
+    ports:
+      - "3307:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./migrations/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - dnarmasid-net
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: dnarmasid-redis
+    restart: unless-stopped
+    environment:
+      TZ: ${TZ}
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - dnarmasid-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ─────────────────────────────────────────
+  # SERVICES
+  # ─────────────────────────────────────────
+
+  scheduler:
+    build:
+      context: .
+      dockerfile: services/scheduler/Dockerfile
+    container_name: dnarmasid-scheduler
+    restart: unless-stopped
+    env_file: .env
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - dnarmasid-net
+    # Scheduler hanya butuh Redis (publish job)
+    # Tidak butuh MySQL, tidak butuh media volume
+
+  scraper:
+    build:
+      context: .
+      dockerfile: services/scraper/Dockerfile
+    container_name: dnarmasid-scraper
+    restart: unless-stopped
+    env_file: .env
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - dnarmasid-net
+    # Scraper: consume Redis (job.scrape) → simpan MySQL → publish Redis (gold.scraped)
+
+  ai-generator:
+    build:
+      context: .
+      dockerfile: services/ai-generator/Dockerfile
+    container_name: dnarmasid-ai-generator
+    restart: unless-stopped
+    env_file: .env
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - dnarmasid-net
+    # AI Generator: consume Redis (gold.scraped) → call Anthropic API → publish Redis (content.ready)
+
+  media-generator:
+    build:
+      context: .
+      dockerfile: services/media-generator/Dockerfile
+    container_name: dnarmasid-media-generator
+    restart: unless-stopped
+    env_file: .env
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - media-data:/app/volumes/media
+    networks:
+      - dnarmasid-net
+    # Media Generator: consume Redis (gold.scraped) → buat gambar/video → publish Redis (media.ready)
+
+  telegram-bot:
+    build:
+      context: .
+      dockerfile: services/telegram-bot/Dockerfile
+    container_name: dnarmasid-telegram-bot
+    restart: unless-stopped
+    env_file: .env
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - media-data:/app/volumes/media  # baca file media dari media-generator
+    networks:
+      - dnarmasid-net
+    # Telegram Bot: consume Redis (content.ready + media.ready) → kirim ke Telegram
