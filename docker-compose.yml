@@ -57,7 +57,7 @@ services:
     environment:
       TZ: ${TZ}
     ports:
-      - "6379:6379"
+      - "6380:6379"
     volumes:
       - redis-data:/data
     networks:
