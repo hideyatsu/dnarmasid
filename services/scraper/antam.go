@@ -72,16 +72,29 @@ func (s *AntamScraper) scrape(date time.Time) ([]models.GoldPrice, error) {
 	c.SetRequestTimeout(time.Duration(s.cfg.ScrapeTimeoutSeconds) * time.Second)
 
 	// ⚠️ Selector ini perlu disesuaikan dengan struktur HTML logammulia.com
-	// Jalankan: curl https://www.logammulia.com/id/harga-emas-hari-ini | grep -A5 "table"
-	c.OnHTML("table.table-harga-emas tbody tr, table tbody tr", func(e *colly.HTMLElement) {
+	var isEmasBatangan bool
+	c.OnHTML("table tbody tr", func(e *colly.HTMLElement) {
+		thText := strings.TrimSpace(e.ChildText("th"))
+		if thText != "" {
+			if thText == "Emas Batangan" {
+				isEmasBatangan = true
+			} else if thText == "Emas Batangan Gift Series" || thText == "Emas Batangan Selamat Idul Fitri" || thText == "Emas Batangan Imlek" || thText == "Emas Batangan Batik Seri III" || thText == "Perak Murni" || thText == "Perak Heritage" {
+				isEmasBatangan = false
+			}
+		}
+
+		if !isEmasBatangan {
+			return
+		}
+
 		cols := e.ChildTexts("td")
-		if len(cols) < 3 {
+		if len(cols) < 2 {
 			return
 		}
 
 		gram := parseGram(cols[0])
 		buyPrice := parsePrice(cols[1])
-		sellPrice := parsePrice(cols[2])
+		sellPrice := int64(0) // Tidak ada buyback price di tabel ini
 
 		if gram <= 0 || buyPrice <= 0 {
 			return
@@ -102,6 +115,33 @@ func (s *AntamScraper) scrape(date time.Time) ([]models.GoldPrice, error) {
 
 	if err := c.Visit(s.cfg.AntamURL); err != nil {
 		return nil, err
+	}
+
+	// Scrape Harga Buyback dari url terpisah berdasarkan nilai valBasePrice (1 gram)
+	var baseBuyback int64
+	cBuyback := colly.NewCollector(
+		colly.UserAgent("Mozilla/5.0 (compatible; DnarMasID-Bot/1.0)"),
+	)
+	cBuyback.SetRequestTimeout(time.Duration(s.cfg.ScrapeTimeoutSeconds) * time.Second)
+
+	cBuyback.OnHTML("input#valBasePrice", func(e *colly.HTMLElement) {
+		val := e.Attr("value")
+		// Format value misal: "2577000.00"
+		parts := strings.Split(val, ".")
+		if len(parts) > 0 {
+			if parsed, err := strconv.ParseInt(parts[0], 10, 64); err == nil {
+				baseBuyback = parsed
+			}
+		}
+	})
+
+	cBuyback.Visit("https://www.logammulia.com/id/sell/gold")
+
+	// Terapkan baseBuyback (harga buyback per gram) secara proporsional ke semua item
+	if baseBuyback > 0 {
+		for i := range prices {
+			prices[i].SellPrice = int64(prices[i].Gram * float64(baseBuyback))
+		}
 	}
 
 	// Fallback: jika scrape gagal dapat data, gunakan data dummy untuk dev
