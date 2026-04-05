@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"strings"
+	"time"
 
 	"dnarmasid/shared/config"
 	"dnarmasid/shared/models"
@@ -182,4 +183,77 @@ func (b *Broadcaster) sendText(chatID int64, text string) {
 	if _, err := b.bot.Send(msg); err != nil {
 		log.Printf("[broadcaster] ⚠️ sendText error: %v", err)
 	}
+}
+
+// SendScrapeNotification mengirim notifikasi singkat harga harian
+func (b *Broadcaster) SendScrapeNotification(event *models.GoldScrapedEvent) error {
+	adminID := b.cfg.TelegramAdminChatID
+
+	// Cari harga 1 gram
+	var price1g models.GoldPrice
+	for _, p := range event.Prices {
+		if p.Gram == 1 {
+			price1g = p
+			break
+		}
+	}
+
+	if price1g.BuyPrice == 0 {
+		return fmt.Errorf("no 1 gram price found")
+	}
+
+    // Format trend arrow
+	trendArrow := ""
+	if event.Trend == "up" {
+		trendArrow = "▲"
+	} else if event.Trend == "down" {
+		trendArrow = "▼"
+	} else {
+		trendArrow = "-"
+	}
+
+	bbTrendArrow := ""
+	if event.BuybackTrend == "up" {
+		bbTrendArrow = "▲"
+	} else if event.BuybackTrend == "down" {
+		bbTrendArrow = "▼"
+	} else {
+		bbTrendArrow = "-"
+	}
+
+	importHelper := func(n int64) string {
+		if n < 0 {
+			n = -n
+		}
+		s := fmt.Sprintf("%d", n)
+		var parts []string
+		for i := len(s); i > 0; i -= 3 {
+			start := i - 3
+			if start < 0 {
+				start = 0
+			}
+			parts = append([]string{s[start:i]}, parts...)
+		}
+		return strings.Join(parts, ".")
+	}
+
+	dateFmt := event.Date // e.g. "2026-04-04" -> we want "04 Apr 2026"
+	if parsed, err := time.Parse("2006-01-02", event.Date); err == nil {
+		dateFmt = parsed.Format("02 Jan 2006")
+	}
+
+	msgText := fmt.Sprintf(
+		"Harga Emas Antam Hari Ini 🪙\n\n"+
+			"📅 %s\n"+
+			"Harga: Rp %s / gram %s (Rp %s)\n"+
+			"Buyback: Rp %s / gram %s (Rp %s)\n",
+		dateFmt,
+		importHelper(price1g.BuyPrice), trendArrow, importHelper(event.ChangeAmt),
+		importHelper(price1g.SellPrice), bbTrendArrow, importHelper(event.BuybackChangeAmt),
+	)
+
+	b.sendText(adminID, msgText)
+	log.Printf("[broadcaster] ✅ Sent scrape notification to admin")
+
+	return nil
 }

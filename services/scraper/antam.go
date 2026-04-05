@@ -47,15 +47,17 @@ func (s *AntamScraper) Run() (*models.GoldScrapedEvent, error) {
 	}
 
 	// Hitung perubahan vs kemarin (gram 1)
-	changePct, changeAmt, trend := s.calcChange(today, prices)
+	changePct, changeAmt, trend, bbChangeAmt, bbTrend := s.calcChange(today, prices)
 
 	event := &models.GoldScrapedEvent{
-		Date:      today.Format("2006-01-02"),
-		PriceID:   prices[0].ID,
-		Prices:    prices,
-		ChangePct: changePct,
-		ChangeAmt: changeAmt,
-		Trend:     trend,
+		Date:             today.Format("2006-01-02"),
+		PriceID:          prices[0].ID,
+		Prices:           prices,
+		ChangePct:        changePct,
+		ChangeAmt:        changeAmt,
+		Trend:            trend,
+		BuybackChangeAmt: bbChangeAmt,
+		BuybackTrend:     bbTrend,
 	}
 
 	return event, nil
@@ -154,26 +156,28 @@ func (s *AntamScraper) scrape(date time.Time) ([]models.GoldPrice, error) {
 }
 
 // calcChange menghitung perubahan harga vs kemarin (gram 1)
-func (s *AntamScraper) calcChange(today time.Time, todayPrices []models.GoldPrice) (float64, int64, string) {
+func (s *AntamScraper) calcChange(today time.Time, todayPrices []models.GoldPrice) (float64, int64, string, int64, string) {
 	yesterday := today.AddDate(0, 0, -1)
 
 	var yesterdayPrice models.GoldPrice
 	result := s.db.Where("date = ? AND gram = 1", yesterday).First(&yesterdayPrice)
 	if result.Error != nil {
-		return 0, 0, "stable"
+		return 0, 0, "stable", 0, "stable"
 	}
 
 	// Cari harga 1 gram hari ini
 	var todayPrice1g int64
+	var todaySellPrice1g int64
 	for _, p := range todayPrices {
 		if p.Gram == 1 {
 			todayPrice1g = p.BuyPrice
+			todaySellPrice1g = p.SellPrice
 			break
 		}
 	}
 
 	if todayPrice1g == 0 || yesterdayPrice.BuyPrice == 0 {
-		return 0, 0, "stable"
+		return 0, 0, "stable", 0, "stable"
 	}
 
 	changeAmt := todayPrice1g - yesterdayPrice.BuyPrice
@@ -186,7 +190,15 @@ func (s *AntamScraper) calcChange(today time.Time, todayPrices []models.GoldPric
 		trend = "down"
 	}
 
-	return changePct, changeAmt, trend
+	bbChangeAmt := todaySellPrice1g - yesterdayPrice.SellPrice
+	bbTrend := "stable"
+	if bbChangeAmt > 0 {
+		bbTrend = "up"
+	} else if bbChangeAmt < 0 {
+		bbTrend = "down"
+	}
+
+	return changePct, changeAmt, trend, bbChangeAmt, bbTrend
 }
 
 // ─────────────────────────────────────────

@@ -93,6 +93,29 @@ func main() {
 		}
 	}()
 
+	// ─── Goroutine 4: Consume gold.scraped → kirim notifikasi awal ke admin
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		log.Println("[telegram-bot] 📡 Listening gold.scraped queue...")
+		for {
+			select {
+			case <-quit:
+				return
+			default:
+				var event models.GoldScrapedEvent
+				err := q.ConsumeJSON(queue.KeyGoldScraped, 5*time.Second, &event)
+				if err != nil {
+					continue
+				}
+				log.Printf("[telegram-bot] 📥 gold.scraped received: date=%s", event.Date)
+				if err := broadcaster.SendScrapeNotification(&event); err != nil {
+					log.Printf("[telegram-bot] ❌ SendScrapeNotification error: %v", err)
+				}
+			}
+		}
+	}()
+
 	log.Println("[telegram-bot] ✅ All goroutines running.")
 	<-quit
 	log.Println("[telegram-bot] Shutting down...")

@@ -24,8 +24,10 @@ type GoldScrapedEvent struct {
 	PriceID   uint         `json:"price_id"`    // ID dari gold_prices
 	Prices    []GoldPrice  `json:"prices"`      // semua gram hari ini
 	ChangePct float64      `json:"change_pct"`  // % perubahan vs kemarin
-	ChangeAmt int64        `json:"change_amt"`  // nominal perubahan (Rp)
-	Trend     string       `json:"trend"`       // "up" | "down" | "stable"
+	ChangeAmt        int64        `json:"change_amt"`  // nominal perubahan (Rp)
+	Trend            string       `json:"trend"`       // "up" | "down" | "stable"
+	BuybackChangeAmt int64        `json:"buyback_change_amt"`
+	BuybackTrend     string       `json:"buyback_trend"`
 }
 
 // ─────────────────────────────────────────
