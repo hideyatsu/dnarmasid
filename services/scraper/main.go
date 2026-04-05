@@ -54,7 +54,6 @@ func main() {
 				continue
 			}
 
-			log.Printf("[scraper] 📥 Event: %v", event)
 			// Publish hasil ke Redis → ai, media, telegram (Fan-out)
 			// if err := q.Publish(queue.KeyGoldScrapedAI, event); err != nil {
 			// 	log.Printf("[scraper] ❌ Failed to publish to ai: %v", err)

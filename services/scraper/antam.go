@@ -25,10 +25,21 @@ func NewAntamScraper(cfg *config.Config, db *gorm.DB) *AntamScraper {
 
 // Run menjalankan scraping dan return GoldScrapedEvent
 func (s *AntamScraper) Run() (*models.GoldScrapedEvent, error) {
-	today := time.Now().Truncate(24 * time.Hour)
-
 	log.Printf("[scraper] Scraping Antam: %s", s.cfg.AntamURL)
 
+	// Gunakan lokasi Asia/Jakarta secara konsisten
+	loc, _ := time.LoadLocation("Asia/Jakarta")
+	today := time.Now().In(loc).Truncate(24 * time.Hour)
+
+	// 1. Ambil update time dari landing page (sebagai gate)
+	updateTime, err := s.scrapeUpdateTime()
+	if err != nil {
+		log.Printf("[scraper] ⚠️ Gagal mengambil update time: %v. Lanjut tanpa gate.", err)
+	} else {
+		log.Printf("[scraper] 🕐 Website update-time: %v", updateTime.Format("2006-01-02 15:04:05"))
+	}
+
+	// 2. Jalankan scraping detail harga
 	parsedDate, prices, err := s.scrape(today)
 	if err != nil {
 		return nil, fmt.Errorf("scrape error: %w", err)
@@ -37,27 +48,64 @@ func (s *AntamScraper) Run() (*models.GoldScrapedEvent, error) {
 		return nil, fmt.Errorf("no prices found")
 	}
 
-	var count int64
-	s.db.Model(&models.GoldPrice{}).Where("date = ? AND gram = ?", parsedDate, 1).Count(&count)
-	if count > 0 {
-		log.Printf("[scraper] ℹ️ Harga untuk %s sudah ada di database. Skip pipeline.", parsedDate.Format("2006-01-02"))
-		return nil, fmt.Errorf("already scraped today")
-	}
-
-	// Simpan ke MySQL (upsert)
+	// 3. Simpan atau Update ke MySQL (Option A)
+	var didChange bool
 	for i := range prices {
-		result := s.db.Where(models.GoldPrice{Date: parsedDate, Gram: prices[i].Gram}).
-			FirstOrCreate(&prices[i])
-		if result.Error != nil {
-			log.Printf("[scraper] ⚠️ Error saving gram %.1f: %v", prices[i].Gram, result.Error)
+		prices[i].SourceUpdateTime = updateTime
+
+		var existing models.GoldPrice
+		result := s.db.Where("date = ? AND gram = ?", parsedDate, prices[i].Gram).First(&existing)
+
+		if result.Error == gorm.ErrRecordNotFound {
+			// Data baru untuk hari ini
+			if err := s.db.Create(&prices[i]).Error; err != nil {
+				log.Printf("[scraper] ❌ Failed to create gram %.1f: %v", prices[i].Gram, err)
+			} else {
+				didChange = true
+			}
+		} else if result.Error == nil {
+			// Sudah ada data hari ini, cek apakah perlu update
+			isSameTime := false
+			if existing.SourceUpdateTime != nil && updateTime != nil && existing.SourceUpdateTime.Equal(*updateTime) {
+				isSameTime = true
+			}
+
+			if !isSameTime {
+				// Ada update baru di hari yang sama (misal update sore)
+				existing.BuyPrice = prices[i].BuyPrice
+				existing.SellPrice = prices[i].SellPrice
+				existing.SourceUpdateTime = updateTime
+				if err := s.db.Save(&existing).Error; err != nil {
+					log.Printf("[scraper] ❌ Failed to update gram %.1f: %v", prices[i].Gram, err)
+				} else {
+					prices[i].ID = existing.ID // Penting untuk reference event
+					didChange = true
+				}
+			}
 		}
 	}
 
-	// Hitung perubahan vs kemarin (gram 1)
+	if !didChange {
+		log.Printf("[scraper] ℹ️ Tidak ada perubahan (update time tetap). Skip pipeline.")
+		return nil, fmt.Errorf("no update since last scrape")
+	}
+
+	// 4. Hitung perubahan vs kemarin (gram 1)
 	changePct, changeAmt, trend, bbChangeAmt, bbTrend := s.calcChange(parsedDate, prices)
+
+	updateTimeStr := ""
+	if updateTime != nil {
+		// Konversi kembali dari May -> Mei dsb agar enak dibaca user Indo
+		updateTimeStr = updateTime.Format("02 Jan 2006 15:04:05")
+		updateTimeStr = strings.ReplaceAll(updateTimeStr, "May", "Mei")
+		updateTimeStr = strings.ReplaceAll(updateTimeStr, "Aug", "Agt")
+		updateTimeStr = strings.ReplaceAll(updateTimeStr, "Oct", "Okt")
+		updateTimeStr = strings.ReplaceAll(updateTimeStr, "Dec", "Des")
+	}
 
 	event := &models.GoldScrapedEvent{
 		Date:             parsedDate.Format("2006-01-02"),
+		UpdateTime:       updateTimeStr,
 		PriceID:          prices[0].ID,
 		Prices:           prices,
 		ChangePct:        changePct,
@@ -68,6 +116,61 @@ func (s *AntamScraper) Run() (*models.GoldScrapedEvent, error) {
 	}
 
 	return event, nil
+}
+
+// scrapeUpdateTime mengambil info "Perubahan terakhir" dari landing page
+func (s *AntamScraper) scrapeUpdateTime() (*time.Time, error) {
+	var updateTime *time.Time
+
+	c := colly.NewCollector(
+		colly.UserAgent("Mozilla/5.0 (compatible; DnarMasID-Bot/1.0)"),
+	)
+	c.SetRequestTimeout(time.Duration(s.cfg.ScrapeTimeoutSeconds) * time.Second)
+
+	// URL landing page biasanya basis dari AntamURL
+	landingURL := s.cfg.AntamURL
+	if strings.HasSuffix(landingURL, "/harga-emas-hari-ini") {
+		landingURL = strings.ReplaceAll(landingURL, "/harga-emas-hari-ini", "")
+	}
+
+	c.OnHTML("body", func(e *colly.HTMLElement) {
+		// Cari pattern text di body
+		text := e.Text
+		searchKey := "Perubahan terakhir:"
+		idx := strings.Index(text, searchKey)
+		if idx != -1 {
+			// Extract string setela key (contoh: " 05 Apr 2026 07:31:00")
+			raw := strings.TrimSpace(text[idx+len(searchKey) : idx+len(searchKey)+25])
+			// Bersihkan potential noise di akhir
+			parts := strings.Split(raw, "\n")
+			dateStr := strings.TrimSpace(parts[0])
+
+			// Normalisasi bulan
+			dateStr = strings.ReplaceAll(dateStr, "Mei", "May")
+			dateStr = strings.ReplaceAll(dateStr, "Agt", "Aug")
+			dateStr = strings.ReplaceAll(dateStr, "Okt", "Oct")
+			dateStr = strings.ReplaceAll(dateStr, "Des", "Dec")
+
+			// Load lokasi WIB/Jakarta
+			loc, _ := time.LoadLocation("Asia/Jakarta")
+
+			// Layout: 02 Jan 2006 15:04:05
+			if t, err := time.ParseInLocation("02 Jan 2006 15:04:05", dateStr, loc); err == nil {
+				updateTime = &t
+			}
+		}
+	})
+
+	err := c.Visit(landingURL)
+	if err != nil {
+		return nil, err
+	}
+
+	if updateTime == nil {
+		return nil, fmt.Errorf("pattern 'Perubahan terakhir' not found")
+	}
+
+	return updateTime, nil
 }
 
 // scrape mengambil data harga dari logammulia.com
@@ -90,7 +193,8 @@ func (s *AntamScraper) scrape(defaultDate time.Time) (time.Time, []models.GoldPr
 			dateStr = strings.ReplaceAll(dateStr, "Agt", "Aug")
 			dateStr = strings.ReplaceAll(dateStr, "Okt", "Oct")
 			dateStr = strings.ReplaceAll(dateStr, "Des", "Dec")
-			if t, err := time.Parse("02 Jan 2006", dateStr); err == nil {
+			loc, _ := time.LoadLocation("Asia/Jakarta")
+			if t, err := time.ParseInLocation("02 Jan 2006", dateStr, loc); err == nil {
 				scrapedDate = t
 			}
 		}
@@ -183,7 +287,7 @@ func (s *AntamScraper) calcChange(today time.Time, todayPrices []models.GoldPric
 	yesterday := today.AddDate(0, 0, -1)
 
 	var yesterdayPrice models.GoldPrice
-	result := s.db.Where("date = ? AND gram = 1", yesterday).First(&yesterdayPrice)
+	result := s.db.Where("date = ? AND gram = 1", yesterday.Format("2006-01-02")).First(&yesterdayPrice)
 	if result.Error != nil {
 		return 0, 0, "stable", 0, "stable"
 	}
