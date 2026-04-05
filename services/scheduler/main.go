@@ -38,7 +38,24 @@ func main() {
 	}
 
 	c.Start()
-	log.Printf("[scheduler] ✅ Running. Cron: %s (WIB)", cfg.ScheduleCron)
+	log.Printf("[scheduler] ✅ Running. Morning: %s | Evening: %s (WIB)", cfg.ScheduleCron, cfg.ScheduleCronEvening)
+
+	// Trigger scrape pipeline sore hari (EVENING)
+	_, err = c.AddFunc(cfg.ScheduleCronEvening, func() {
+		log.Println("[scheduler] ⏰ Triggering evening scrape pipeline...")
+		if err := q.Publish(queue.KeyJobScrape, map[string]string{
+			"triggered_at": time.Now().Format(time.RFC3339),
+			"source":       "scheduler",
+			"session":      "evening",
+		}); err != nil {
+			log.Printf("[scheduler] ❌ Failed to publish job.scrape: %v", err)
+			return
+		}
+		log.Println("[scheduler] ✅ evening job.scrape published to Redis")
+	})
+	if err != nil {
+		log.Fatalf("[scheduler] Failed to add evening cron job: %v", err)
+	}
 
 	// Graceful shutdown
 	quit := make(chan os.Signal, 1)

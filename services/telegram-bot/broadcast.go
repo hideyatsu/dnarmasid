@@ -202,23 +202,9 @@ func (b *Broadcaster) SendScrapeNotification(event *models.GoldScrapedEvent) err
 		return fmt.Errorf("no 1 gram price found")
 	}
 
-    // Format trend arrow
-	trendArrow := ""
-	if event.Trend == "up" {
-		trendArrow = "▲"
-	} else if event.Trend == "down" {
-		trendArrow = "▼"
-	} else {
-		trendArrow = "-"
-	}
-
-	bbTrendArrow := ""
-	if event.BuybackTrend == "up" {
-		bbTrendArrow = "▲"
-	} else if event.BuybackTrend == "down" {
-		bbTrendArrow = "▼"
-	} else {
-		bbTrendArrow = "-"
+	bbChangeAmt := event.BuybackChangeAmt
+	if bbChangeAmt < 0 {
+		bbChangeAmt = -bbChangeAmt
 	}
 
 	importHelper := func(n int64) string {
@@ -237,16 +223,34 @@ func (b *Broadcaster) SendScrapeNotification(event *models.GoldScrapedEvent) err
 		return strings.Join(parts, ".")
 	}
 
-	dateFmt := event.Date // e.g. "2026-04-04" -> we want "04 Apr 2026"
-	if parsed, err := time.Parse("2006-01-02", event.Date); err == nil {
+	// Deteksi panah trend (Buy)
+	trendArrow := "▬"
+	if event.Trend == "up" {
+		trendArrow = "▲"
+	} else if event.Trend == "down" {
+		trendArrow = "▼"
+	}
+
+	// Deteksi panah trend (Buyback)
+	bbTrendArrow := "▬"
+	if event.BuybackTrend == "up" {
+		bbTrendArrow = "▲"
+	} else if event.BuybackTrend == "down" {
+		bbTrendArrow = "▼"
+	}
+
+	dateFmt := event.Date
+	if event.UpdateTime != "" {
+		dateFmt = event.UpdateTime
+	} else if parsed, err := time.Parse("2006-01-02", event.Date); err == nil {
 		dateFmt = parsed.Format("02 Jan 2006")
 	}
 
 	msgText := fmt.Sprintf(
 		"Harga Emas Antam Hari Ini 🪙\n\n"+
 			"📅 %s\n"+
-			"Harga: Rp %s / gram %s (Rp %s)\n"+
-			"Buyback: Rp %s / gram %s (Rp %s)\n",
+			"💰 Rp %s / gram %s (Rp %s)\n"+
+			"🔄 Rp %s / gram %s (Rp %s)\n",
 		dateFmt,
 		importHelper(price1g.BuyPrice), trendArrow, importHelper(event.ChangeAmt),
 		importHelper(price1g.SellPrice), bbTrendArrow, importHelper(event.BuybackChangeAmt),

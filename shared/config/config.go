@@ -34,7 +34,8 @@ type Config struct {
 	ScrapeTimeoutSeconds int
 
 	// Scheduler
-	ScheduleCron string
+	ScheduleCron        string
+	ScheduleCronEvening string
 
 	// Media
 	MediaOutputPath string
@@ -69,7 +70,8 @@ func Load() *Config {
 		AntamURL:             getEnv("ANTAM_URL", "https://www.logammulia.com/id/harga-emas-hari-ini"),
 		ScrapeTimeoutSeconds: scrapeTimeout,
 
-		ScheduleCron: getEnv("SCHEDULE_CRON", "0 8 * * *"),
+		ScheduleCron:        getEnv("SCHEDULE_CRON", "0 9 * * *"),
+		ScheduleCronEvening: getEnv("SCHEDULE_CRON_EVENING", "0 18 * * *"),
 
 		MediaOutputPath: getEnv("MEDIA_OUTPUT_PATH", "/app/volumes/media"),
 	}

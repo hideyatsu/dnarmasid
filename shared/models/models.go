@@ -9,19 +9,21 @@ import (
 // ─────────────────────────────────────────
 
 type GoldPrice struct {
-	ID        uint      `gorm:"primarykey" json:"id"`
-	Date      time.Time `gorm:"uniqueIndex:uq_date_gram" json:"date"`
-	Gram      float64   `gorm:"uniqueIndex:uq_date_gram" json:"gram"`
-	BuyPrice  int64     `json:"buy_price"`
-	SellPrice int64     `json:"sell_price"`
-	SourceURL string    `json:"source_url"`
-	CreatedAt time.Time `json:"created_at"`
+	ID               uint       `gorm:"primarykey" json:"id"`
+	Date             time.Time  `gorm:"uniqueIndex:uq_date_gram" json:"date"`
+	Gram             float64    `gorm:"uniqueIndex:uq_date_gram" json:"gram"`
+	BuyPrice         int64      `json:"buy_price"`
+	SellPrice        int64      `json:"sell_price"`
+	SourceURL        string     `json:"source_url"`
+	SourceUpdateTime *time.Time `json:"source_update_time"`
+	CreatedAt        time.Time  `json:"created_at"`
 }
 
 // GoldScrapedEvent — payload Redis: scraper → ai-generator & media-generator
 type GoldScrapedEvent struct {
-	Date      string       `json:"date"`        // "2026-04-04"
-	PriceID   uint         `json:"price_id"`    // ID dari gold_prices
+	Date       string       `json:"date"`        // "2026-04-04"
+	UpdateTime string       `json:"update_time"` // "05 Apr 2026 07:31:00"
+	PriceID    uint         `json:"price_id"`    // ID dari gold_prices
 	Prices    []GoldPrice  `json:"prices"`      // semua gram hari ini
 	ChangePct float64      `json:"change_pct"`  // % perubahan vs kemarin
 	ChangeAmt        int64        `json:"change_amt"`  // nominal perubahan (Rp)
