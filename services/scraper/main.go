@@ -54,10 +54,16 @@ func main() {
 				continue
 			}
 
-			// Publish hasil ke Redis → ai-generator & media-generator
-			if err := q.Publish(queue.KeyGoldScraped, event); err != nil {
-				log.Printf("[scraper] ❌ Failed to publish gold.scraped: %v", err)
-				continue
+			log.Printf("[scraper] 📥 Event: %v", event)
+			// Publish hasil ke Redis → ai, media, telegram (Fan-out)
+			// if err := q.Publish(queue.KeyGoldScrapedAI, event); err != nil {
+			// 	log.Printf("[scraper] ❌ Failed to publish to ai: %v", err)
+			// }
+			// if err := q.Publish(queue.KeyGoldScrapedMedia, event); err != nil {
+			// 	log.Printf("[scraper] ❌ Failed to publish to media: %v", err)
+			// }
+			if err := q.Publish(queue.KeyGoldScrapedBot, event); err != nil {
+				log.Printf("[scraper] ❌ Failed to publish to telegram: %v", err)
 			}
 
 			log.Printf("[scraper] ✅ gold.scraped published | Date: %s | Trend: %s | Change: %+.2f%%",

@@ -15,10 +15,12 @@ import (
 // Queue keys — kontrak komunikasi antar service
 // ⚠️ JANGAN ubah nama key ini tanpa update semua service terkait
 const (
-	KeyJobScrape     = "job.scrape"      // scheduler → scraper
-	KeyGoldScraped   = "gold.scraped"    // scraper → ai-generator, media-generator
-	KeyContentReady  = "content.ready"   // ai-generator → telegram-bot
-	KeyMediaReady    = "media.ready"     // media-generator → telegram-bot
+	KeyJobScrape          = "job.scrape"              // scheduler → scraper
+	KeyGoldScrapedAI      = "gold.scraped.ai"         // scraper → ai-generator
+	KeyGoldScrapedMedia   = "gold.scraped.media"      // scraper → media-generator
+	KeyGoldScrapedBot     = "gold.scraped.telegram"   // scraper → telegram-bot
+	KeyContentReady       = "content.ready"           // ai-generator → telegram-bot
+	KeyMediaReady         = "media.ready"             // media-generator → telegram-bot
 )
 
 type Client struct {

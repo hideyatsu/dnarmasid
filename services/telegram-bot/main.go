@@ -106,7 +106,7 @@ func main() {
 				return
 			default:
 				var event models.GoldScrapedEvent
-				err := q.ConsumeJSON(queue.KeyGoldScraped, 5*time.Second, &event)
+				err := q.ConsumeJSON(queue.KeyGoldScrapedBot, 5*time.Second, &event)
 				if err != nil {
 					continue
 				}
