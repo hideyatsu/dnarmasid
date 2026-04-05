@@ -29,7 +29,7 @@ func (s *AntamScraper) Run() (*models.GoldScrapedEvent, error) {
 
 	log.Printf("[scraper] Scraping Antam: %s", s.cfg.AntamURL)
 
-	prices, err := s.scrape(today)
+	parsedDate, prices, err := s.scrape(today)
 	if err != nil {
 		return nil, fmt.Errorf("scrape error: %w", err)
 	}
@@ -37,9 +37,16 @@ func (s *AntamScraper) Run() (*models.GoldScrapedEvent, error) {
 		return nil, fmt.Errorf("no prices found")
 	}
 
+	var count int64
+	s.db.Model(&models.GoldPrice{}).Where("date = ? AND gram = ?", parsedDate, 1).Count(&count)
+	if count > 0 {
+		log.Printf("[scraper] ℹ️ Harga untuk %s sudah ada di database. Skip pipeline.", parsedDate.Format("2006-01-02"))
+		return nil, fmt.Errorf("already scraped today")
+	}
+
 	// Simpan ke MySQL (upsert)
 	for i := range prices {
-		result := s.db.Where(models.GoldPrice{Date: today, Gram: prices[i].Gram}).
+		result := s.db.Where(models.GoldPrice{Date: parsedDate, Gram: prices[i].Gram}).
 			FirstOrCreate(&prices[i])
 		if result.Error != nil {
 			log.Printf("[scraper] ⚠️ Error saving gram %.1f: %v", prices[i].Gram, result.Error)
@@ -47,10 +54,10 @@ func (s *AntamScraper) Run() (*models.GoldScrapedEvent, error) {
 	}
 
 	// Hitung perubahan vs kemarin (gram 1)
-	changePct, changeAmt, trend, bbChangeAmt, bbTrend := s.calcChange(today, prices)
+	changePct, changeAmt, trend, bbChangeAmt, bbTrend := s.calcChange(parsedDate, prices)
 
 	event := &models.GoldScrapedEvent{
-		Date:             today.Format("2006-01-02"),
+		Date:             parsedDate.Format("2006-01-02"),
 		PriceID:          prices[0].ID,
 		Prices:           prices,
 		ChangePct:        changePct,
@@ -64,14 +71,30 @@ func (s *AntamScraper) Run() (*models.GoldScrapedEvent, error) {
 }
 
 // scrape mengambil data harga dari logammulia.com
-func (s *AntamScraper) scrape(date time.Time) ([]models.GoldPrice, error) {
+func (s *AntamScraper) scrape(defaultDate time.Time) (time.Time, []models.GoldPrice, error) {
 	var prices []models.GoldPrice
+	scrapedDate := defaultDate
 
 	c := colly.NewCollector(
 		colly.UserAgent("Mozilla/5.0 (compatible; DnarMasID-Bot/1.0)"),
 	)
 
 	c.SetRequestTimeout(time.Duration(s.cfg.ScrapeTimeoutSeconds) * time.Second)
+
+	c.OnHTML("h2.ngc-title", func(e *colly.HTMLElement) {
+		text := strings.TrimSpace(e.Text)
+		parts := strings.Split(text, ",")
+		if len(parts) > 1 {
+			dateStr := strings.TrimSpace(parts[1])
+			dateStr = strings.ReplaceAll(dateStr, "Mei", "May")
+			dateStr = strings.ReplaceAll(dateStr, "Agt", "Aug")
+			dateStr = strings.ReplaceAll(dateStr, "Okt", "Oct")
+			dateStr = strings.ReplaceAll(dateStr, "Des", "Dec")
+			if t, err := time.Parse("02 Jan 2006", dateStr); err == nil {
+				scrapedDate = t
+			}
+		}
+	})
 
 	// ⚠️ Selector ini perlu disesuaikan dengan struktur HTML logammulia.com
 	var isEmasBatangan bool
@@ -103,7 +126,7 @@ func (s *AntamScraper) scrape(date time.Time) ([]models.GoldPrice, error) {
 		}
 
 		prices = append(prices, models.GoldPrice{
-			Date:      date,
+			Date:      scrapedDate,
 			Gram:      gram,
 			BuyPrice:  buyPrice,
 			SellPrice: sellPrice,
@@ -116,7 +139,7 @@ func (s *AntamScraper) scrape(date time.Time) ([]models.GoldPrice, error) {
 	})
 
 	if err := c.Visit(s.cfg.AntamURL); err != nil {
-		return nil, err
+		return scrapedDate, nil, err
 	}
 
 	// Scrape Harga Buyback dari url terpisah berdasarkan nilai valBasePrice (1 gram)
@@ -149,10 +172,10 @@ func (s *AntamScraper) scrape(date time.Time) ([]models.GoldPrice, error) {
 	// Fallback: jika scrape gagal dapat data, gunakan data dummy untuk dev
 	if len(prices) == 0 {
 		log.Println("[scraper] ⚠️ No data from scrape, using dev fallback data")
-		prices = devFallbackPrices(date)
+		prices = devFallbackPrices(scrapedDate)
 	}
 
-	return prices, nil
+	return scrapedDate, prices, nil
 }
 
 // calcChange menghitung perubahan harga vs kemarin (gram 1)
