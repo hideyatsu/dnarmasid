@@ -47,20 +47,22 @@ func main() {
 
 			log.Printf("[scraper] 📥 Job received: %v", job)
 
+			forceDummy := job["mode"] == "dummy" || job["force_dummy"] == "true"
+
 			// Jalankan scraping
-			event, err := scraper.Run()
+			event, err := scraper.Run(forceDummy)
 			if err != nil {
 				log.Printf("[scraper] ❌ Scrape failed: %v", err)
 				continue
 			}
 
 			// Publish hasil ke Redis → ai, media, telegram (Fan-out)
-			// if err := q.Publish(queue.KeyGoldScrapedAI, event); err != nil {
-			// 	log.Printf("[scraper] ❌ Failed to publish to ai: %v", err)
-			// }
-			// if err := q.Publish(queue.KeyGoldScrapedMedia, event); err != nil {
-			// 	log.Printf("[scraper] ❌ Failed to publish to media: %v", err)
-			// }
+			if err := q.Publish(queue.KeyGoldScrapedAI, event); err != nil {
+				log.Printf("[scraper] ❌ Failed to publish to ai: %v", err)
+			}
+			if err := q.Publish(queue.KeyGoldScrapedMedia, event); err != nil {
+				log.Printf("[scraper] ❌ Failed to publish to media: %v", err)
+			}
 			if err := q.Publish(queue.KeyGoldScrapedBot, event); err != nil {
 				log.Printf("[scraper] ❌ Failed to publish to telegram: %v", err)
 			}

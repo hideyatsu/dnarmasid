@@ -38,7 +38,7 @@ func (b *Broadcaster) SendContent(event *models.ContentReadyEvent) error {
 		event.Date,
 		event.Analysis,
 	)
-	b.sendMarkdown(adminID, header)
+	b.sendMarkdown(adminID, 0, header)
 
 	// ── Caption per platform
 	platforms := []struct {
@@ -63,17 +63,17 @@ func (b *Broadcaster) SendContent(event *models.ContentReadyEvent) error {
 		// Kirim divider + label platform
 		divider := fmt.Sprintf("━━━━━━━━━━━━━━━━━━━━━━\n%s *%s*\n━━━━━━━━━━━━━━━━━━━━━━",
 			p.emoji, p.label)
-		b.sendMarkdown(adminID, divider)
+		b.sendMarkdown(adminID, 0, divider)
 
 		// Kirim konten (plain text supaya bisa di-copy langsung)
-		b.sendText(adminID, content)
+		b.sendText(adminID, 0, content)
 
 		log.Printf("[broadcaster] ✅ Sent %s caption to admin", p.key)
 	}
 
 	// ── Footer
 	footer := "━━━━━━━━━━━━━━━━━━━━━━\n✅ *Semua caption siap!*\nCopy-paste ke masing-masing platform.\n@DnarMasID"
-	b.sendMarkdown(adminID, footer)
+	b.sendMarkdown(adminID, 0, footer)
 
 	// Update status DB
 	b.db.Model(&models.GeneratedContent{}).
@@ -85,20 +85,26 @@ func (b *Broadcaster) SendContent(event *models.ContentReadyEvent) error {
 
 // SendMedia mengirim gambar/video ke admin chat
 func (b *Broadcaster) SendMedia(event *models.MediaReadyEvent) error {
-	adminID := b.cfg.TelegramAdminChatID
+	chatID := b.cfg.TelegramAdminChatID
+	threadID := 0
+
+	if b.cfg.TelegramGroupID != 0 {
+		chatID = b.cfg.TelegramGroupID
+		threadID = b.cfg.TelegramThreadPostID
+	}
 
 	switch event.MediaType {
 	case models.MediaTypeImage:
-		return b.sendImageFile(adminID, event)
+		return b.sendImageFile(chatID, threadID, event)
 	case models.MediaTypeVideo:
-		return b.sendVideoFile(adminID, event)
+		return b.sendVideoFile(chatID, threadID, event)
 	}
 
 	return nil
 }
 
 // sendImageFile upload dan kirim file gambar ke Telegram
-func (b *Broadcaster) sendImageFile(chatID int64, event *models.MediaReadyEvent) error {
+func (b *Broadcaster) sendImageFile(chatID int64, threadID int, event *models.MediaReadyEvent) error {
 	f, err := os.Open(event.FilePath)
 	if err != nil {
 		return fmt.Errorf("open image file: %w", err)
@@ -107,19 +113,21 @@ func (b *Broadcaster) sendImageFile(chatID int64, event *models.MediaReadyEvent)
 
 	caption := fmt.Sprintf("🖼️ *Infografis Harga Emas*\n📅 %s\n\nSiap diposting ke Instagram, Facebook, Threads.", event.Date)
 
-	msg := tgbotapi.NewPhoto(chatID, tgbotapi.FileReader{
-		Name:   event.FileName,
-		Reader: f,
-	})
-	msg.Caption = caption
-	msg.ParseMode = "Markdown"
+	params := tgbotapi.Params{}
+	params.AddNonZero64("chat_id", chatID)
+	params.AddNonZero("message_thread_id", threadID)
+	params.AddNonEmpty("caption", caption)
+	params.AddNonEmpty("parse_mode", "Markdown")
 
-	_, err = b.bot.Send(msg)
+	_, err = b.bot.UploadFiles("sendPhoto", params, []tgbotapi.RequestFile{{
+		Name: "photo",
+		Data: tgbotapi.FileReader{Name: event.FileName, Reader: f},
+	}})
 	if err != nil {
 		return fmt.Errorf("send photo: %w", err)
 	}
 
-	log.Printf("[broadcaster] 🖼️ Image sent to admin: %s", event.FileName)
+	log.Printf("[broadcaster] 🖼️ Image sent to chat %d (thread %d): %s", chatID, threadID, event.FileName)
 
 	b.db.Model(&models.GeneratedMedia{}).
 		Where("file_name = ?", event.FileName).
@@ -129,10 +137,10 @@ func (b *Broadcaster) sendImageFile(chatID int64, event *models.MediaReadyEvent)
 }
 
 // sendVideoFile upload dan kirim file video ke Telegram
-func (b *Broadcaster) sendVideoFile(chatID int64, event *models.MediaReadyEvent) error {
+func (b *Broadcaster) sendVideoFile(chatID int64, threadID int, event *models.MediaReadyEvent) error {
 	// Skip placeholder .todo file
 	if strings.HasSuffix(event.FileName, ".todo") {
-		b.sendMarkdown(chatID,
+		b.sendMarkdown(chatID, threadID,
 			"🎬 *Video/Reels*\n⚠️ Video generation belum diimplementasikan.\nImplement FFmpeg di `services/media-generator/image.go` → `GenerateVideo()`")
 		return nil
 	}
@@ -145,19 +153,21 @@ func (b *Broadcaster) sendVideoFile(chatID int64, event *models.MediaReadyEvent)
 
 	caption := fmt.Sprintf("🎬 *Video/Reels Harga Emas*\n📅 %s\n\nSiap diposting ke TikTok, YouTube Shorts, Instagram Reels.", event.Date)
 
-	msg := tgbotapi.NewVideo(chatID, tgbotapi.FileReader{
-		Name:   event.FileName,
-		Reader: f,
-	})
-	msg.Caption = caption
-	msg.ParseMode = "Markdown"
+	params := tgbotapi.Params{}
+	params.AddNonZero64("chat_id", chatID)
+	params.AddNonZero("message_thread_id", threadID)
+	params.AddNonEmpty("caption", caption)
+	params.AddNonEmpty("parse_mode", "Markdown")
 
-	_, err = b.bot.Send(msg)
+	_, err = b.bot.UploadFiles("sendVideo", params, []tgbotapi.RequestFile{{
+		Name: "video",
+		Data: tgbotapi.FileReader{Name: event.FileName, Reader: f},
+	}})
 	if err != nil {
 		return fmt.Errorf("send video: %w", err)
 	}
 
-	log.Printf("[broadcaster] 🎬 Video sent to admin: %s", event.FileName)
+	log.Printf("[broadcaster] 🎬 Video sent to chat %d (thread %d): %s", chatID, threadID, event.FileName)
 
 	b.db.Model(&models.GeneratedMedia{}).
 		Where("file_name = ?", event.FileName).
@@ -170,24 +180,36 @@ func (b *Broadcaster) sendVideoFile(chatID int64, event *models.MediaReadyEvent)
 // Helper send functions
 // ─────────────────────────────────────────
 
-func (b *Broadcaster) sendMarkdown(chatID int64, text string) {
-	msg := tgbotapi.NewMessage(chatID, text)
-	msg.ParseMode = "Markdown"
-	if _, err := b.bot.Send(msg); err != nil {
+func (b *Broadcaster) sendMarkdown(chatID int64, threadID int, text string) {
+	params := tgbotapi.Params{}
+	params.AddNonZero64("chat_id", chatID)
+	params.AddNonZero("message_thread_id", threadID)
+	params.AddNonEmpty("text", text)
+	params.AddNonEmpty("parse_mode", "Markdown")
+	if _, err := b.bot.MakeRequest("sendMessage", params); err != nil {
 		log.Printf("[broadcaster] ⚠️ sendMarkdown error: %v", err)
 	}
 }
 
-func (b *Broadcaster) sendText(chatID int64, text string) {
-	msg := tgbotapi.NewMessage(chatID, text)
-	if _, err := b.bot.Send(msg); err != nil {
+func (b *Broadcaster) sendText(chatID int64, threadID int, text string) {
+	params := tgbotapi.Params{}
+	params.AddNonZero64("chat_id", chatID)
+	params.AddNonZero("message_thread_id", threadID)
+	params.AddNonEmpty("text", text)
+	if _, err := b.bot.MakeRequest("sendMessage", params); err != nil {
 		log.Printf("[broadcaster] ⚠️ sendText error: %v", err)
 	}
 }
 
 // SendScrapeNotification mengirim notifikasi singkat harga harian
 func (b *Broadcaster) SendScrapeNotification(event *models.GoldScrapedEvent) error {
-	adminID := b.cfg.TelegramAdminChatID
+	chatID := b.cfg.TelegramAdminChatID
+	threadID := 0
+
+	if b.cfg.TelegramGroupID != 0 {
+		chatID = b.cfg.TelegramGroupID
+		threadID = b.cfg.TelegramThreadGeneralID
+	}
 
 	// Cari harga 1 gram
 	var price1g models.GoldPrice
@@ -256,8 +278,8 @@ func (b *Broadcaster) SendScrapeNotification(event *models.GoldScrapedEvent) err
 		importHelper(price1g.SellPrice), bbTrendArrow, importHelper(event.BuybackChangeAmt),
 	)
 
-	b.sendText(adminID, msgText)
-	log.Printf("[broadcaster] ✅ Sent scrape notification to admin")
+	b.sendText(chatID, threadID, msgText)
+	log.Printf("[broadcaster] ✅ Sent scrape notification to chat %d (thread %d)", chatID, threadID)
 
 	return nil
 }

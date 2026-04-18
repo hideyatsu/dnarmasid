@@ -1,0 +1,32 @@
+{
+  "date": "2026-04-18",
+  "update_time": "18 Apr 2026 08:30:00",
+  "price_id": 1,
+  "prices": [
+    {
+      "gram": 0.5,
+      "buy_price": 675000,
+      "sell_price": 550000
+    },
+    {
+      "gram": 1,
+      "buy_price": 1250000,
+      "sell_price": 1140000
+    },
+    {
+      "gram": 5,
+      "buy_price": 6000000,
+      "sell_price": 5700000
+    },
+    {
+      "gram": 10,
+      "buy_price": 11900000,
+      "sell_price": 11400000
+    }
+  ],
+  "change_pct": 0.81,
+  "change_amt": 10000,
+  "trend": "up",
+  "buyback_change_amt": 5000,
+  "buyback_trend": "up"
+}

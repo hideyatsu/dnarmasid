@@ -24,6 +24,9 @@ type Config struct {
 	TelegramBotToken    string
 	TelegramChannelID   string
 	TelegramAdminChatID int64
+	TelegramGroupID     int64
+	TelegramThreadGeneralID int
+	TelegramThreadPostID    int
 
 	// AI
 	AnthropicAPIKey string
@@ -48,6 +51,9 @@ func Load() *Config {
 	}
 
 	adminChatID, _ := strconv.ParseInt(getEnv("TELEGRAM_ADMIN_CHAT_ID", "0"), 10, 64)
+	groupID, _ := strconv.ParseInt(getEnv("TELEGRAM_GROUP_ID", "0"), 10, 64)
+	threadGeneral, _ := strconv.Atoi(getEnv("TELEGRAM_THREAD_GENERAL_ID", "0"))
+	threadPost, _ := strconv.Atoi(getEnv("TELEGRAM_THREAD_POST_ID", "0"))
 	scrapeTimeout, _ := strconv.Atoi(getEnv("SCRAPE_TIMEOUT_SECONDS", "30"))
 
 	return &Config{
@@ -63,6 +69,9 @@ func Load() *Config {
 		TelegramBotToken:    getEnv("TELEGRAM_BOT_TOKEN", ""),
 		TelegramChannelID:   getEnv("TELEGRAM_CHANNEL_ID", ""),
 		TelegramAdminChatID: adminChatID,
+		TelegramGroupID:     groupID,
+		TelegramThreadGeneralID: threadGeneral,
+		TelegramThreadPostID:    threadPost,
 
 		AnthropicAPIKey: getEnv("ANTHROPIC_API_KEY", ""),
 		AnthropicModel:  getEnv("ANTHROPIC_MODEL", "claude-sonnet-4-20250514"),

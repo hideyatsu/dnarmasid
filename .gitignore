@@ -20,3 +20,6 @@ volumes/
 
 # Docker
 *.log
+
+# Temporary files
+tmp/*
