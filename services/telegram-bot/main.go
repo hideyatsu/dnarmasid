@@ -70,6 +70,7 @@ func main() {
 			}
 		}
 	}()
+	*/
 
 	// ─── Goroutine 3: Consume media.ready → kirim gambar/video ke admin
 	wg.Add(1)
@@ -93,7 +94,6 @@ func main() {
 			}
 		}
 	}()
-	*/
 
 	// ─── Goroutine 4: Consume gold.scraped → kirim notifikasi awal ke admin
 	wg.Add(1)

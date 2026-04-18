@@ -4,6 +4,7 @@ WORKDIR /app
 
 # Copy module files dari root
 COPY go.mod go.sum ./
+RUN apk add --no-cache git
 RUN go mod download
 
 # Copy shared & service source
@@ -11,7 +12,7 @@ COPY shared/ ./shared/
 COPY services/scheduler/ ./services/scheduler/
 
 # Build binary
-RUN CGO_ENABLED=0 GOOS=linux go build -o /bin/scheduler ./services/scheduler
+RUN go mod tidy && CGO_ENABLED=0 GOOS=linux go build -o /bin/scheduler ./services/scheduler
 
 # ─────────────────────────────────────────
 FROM alpine:3.19

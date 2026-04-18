@@ -1,17 +1,18 @@
 package main
 
 import (
+	"context"
 	"fmt"
-	"image/color"
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"dnarmasid/shared/config"
 	"dnarmasid/shared/models"
 
-	"github.com/fogleman/gg"
+	"github.com/chromedp/chromedp"
 	"gorm.io/gorm"
 )
 
@@ -24,39 +25,122 @@ func NewMediaGenerator(cfg *config.Config, db *gorm.DB) *MediaGenerator {
 	return &MediaGenerator{cfg: cfg, db: db}
 }
 
-// GenerateImage membuat infografis harga emas (1080x1080 px — IG square)
+// GenerateImage membuat infografis harga emas memakai chromedp & HTML template
 func (g *MediaGenerator) GenerateImage(event *models.GoldScrapedEvent) (*models.MediaReadyEvent, error) {
-	const (
-		W = 1080
-		H = 1080
-	)
+	// Temukan path template (sesuaikan dengan environment lokal & docker)
+	templatePath := filepath.Join("templates", "priceTemplate.html")
+	if _, err := os.Stat(templatePath); os.IsNotExist(err) {
+		templatePath = filepath.Join("services", "media-generator", "templates", "priceTemplate.html")
+	}
 
-	dc := gg.NewContext(W, H)
+	htmlContent, err := os.ReadFile(templatePath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read template %s: %w", templatePath, err)
+	}
+	htmlStr := string(htmlContent)
 
-	// Background gradient — gold theme
-	drawBackground(dc, W, H)
+	// Cari harga 1 Gram
+	var price1g models.GoldPrice
+	for _, p := range event.Prices {
+		if p.Gram == 1.0 {
+			price1g = p
+			break
+		}
+	}
+	if price1g.Gram == 0 && len(event.Prices) > 0 {
+		price1g = event.Prices[0] // Fallback index 0
+	}
 
-	// Header
-	drawHeader(dc, W, event.Date)
+	// Helper visual trend
+	getTrendIcon := func(trend string) string {
+		switch trend {
+		case "up":
+			return `<svg width="48" height="48" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg"><path d="M4 17l8-9 8 9H4z"/></svg>`
+		case "down":
+			return `<svg width="48" height="48" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg"><path d="M4 8l8 9 8-9H4z"/></svg>`
+		default:
+			return `<svg width="48" height="48" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg"><path d="M19 13H5v-2h14v2z"/></svg>`
+		}
+	}
+	getTrendClass := func(trend string) string {
+		switch trend {
+		case "up":
+			return "diff-up"
+		case "down":
+			return "diff-down"
+		default:
+			return "diff-neutral"
+		}
+	}
 
-	// Price table
-	drawPriceTable(dc, W, event.Prices)
+	// Substitusi placeholder
+	replacements := map[string]string{
+		"{{title}}":            "Update Harga Emas ANTAM",
+		"{{date}}":             formatDate(event.Date),
+		"{{price}}":            formatRupiah(price1g.BuyPrice),
+		"{{priceDiffClass}}":   getTrendClass(event.Trend),
+		"{{priceDiffIcon}}":    getTrendIcon(event.Trend),
+		"{{priceDiffText}}":    formatRupiah(abs(event.ChangeAmt)),
+		"{{buyback}}":          formatRupiah(price1g.SellPrice),
+		"{{buybackDiffClass}}": getTrendClass(event.BuybackTrend),
+		"{{buybackDiffIcon}}":  getTrendIcon(event.BuybackTrend),
+		"{{buybackDiffText}}":  formatRupiah(abs(event.BuybackChangeAmt)),
+	}
 
-	// Change indicator
-	drawChangeIndicator(dc, W, event.ChangeAmt, event.ChangePct, event.Trend)
+	for k, v := range replacements {
+		htmlStr = strings.ReplaceAll(htmlStr, k, v)
+	}
 
-	// Branding
-	drawBranding(dc, W, H)
+	// Tulis output ke file html temp agar bisa dibuka chromedp
+	if err := os.MkdirAll(g.cfg.MediaOutputPath, 0755); err != nil {
+		return nil, fmt.Errorf("failed creating output dir: %w", err)
+	}
+	tempHtmlPath := filepath.Join(g.cfg.MediaOutputPath, fmt.Sprintf("temp_%s.html", event.Date))
+	if err := os.WriteFile(tempHtmlPath, []byte(htmlStr), 0644); err != nil {
+		return nil, fmt.Errorf("failed to write resolved html: %w", err)
+	}
+	defer os.Remove(tempHtmlPath) // hapus selagi function exit
 
-	// Save file
+	absHtmlPath, _ := filepath.Abs(tempHtmlPath)
+	fileURL := "file://" + absHtmlPath
+
 	fileName := fmt.Sprintf("gold_%s.png", event.Date)
 	filePath := filepath.Join(g.cfg.MediaOutputPath, fileName)
 
-	if err := dc.SavePNG(filePath); err != nil {
-		return nil, fmt.Errorf("save PNG error: %w", err)
+	// Setup ExecAllocator untuk menginzinkan flag sandboxing no-sandbox saat di Docker (Alpine linux + Root)
+	opts := append(chromedp.DefaultExecAllocatorOptions[:],
+		chromedp.Flag("no-sandbox", true),
+		chromedp.Flag("disable-setuid-sandbox", true),
+		chromedp.Flag("disable-dev-shm-usage", true),
+	)
+	allocCtx, allocCancel := chromedp.NewExecAllocator(context.Background(), opts...)
+	defer allocCancel()
+
+	ctx, cancel := chromedp.NewContext(allocCtx)
+	defer cancel()
+
+	// Setting Timeout 30 Detik
+	ctx, cancel = context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	// Mulai tugas rendering resolusi IG post 1080x1080
+	var buf []byte
+	err = chromedp.Run(ctx,
+		chromedp.EmulateViewport(1080, 1080),
+		chromedp.Navigate(fileURL),
+		chromedp.WaitVisible("body", chromedp.ByQuery),
+		chromedp.Sleep(2*time.Second), // Load font Montserrat external CDN dari internet
+		chromedp.CaptureScreenshot(&buf),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("chromedp capture error: %w", err)
 	}
 
-	log.Printf("[media-generator] 🖼️ Image saved: %s", filePath)
+	if err := os.WriteFile(filePath, buf, 0644); err != nil {
+		return nil, fmt.Errorf("failed exporting png: %w", err)
+	}
+
+	log.Printf("[media-generator] 🖼️ Image saved via chromedp: %s", filePath)
 
 	// Simpan ke DB
 	media := models.GeneratedMedia{
@@ -78,113 +162,8 @@ func (g *MediaGenerator) GenerateImage(event *models.GoldScrapedEvent) (*models.
 }
 
 // ─────────────────────────────────────────
-// Drawing helpers
+// Helper
 // ─────────────────────────────────────────
-
-func drawBackground(dc *gg.Context, w, h int) {
-	// Dark background
-	dc.SetColor(color.RGBA{R: 18, G: 18, B: 18, A: 255})
-	dc.DrawRectangle(0, 0, float64(w), float64(h))
-	dc.Fill()
-
-	// Gold accent bar top
-	dc.SetColor(color.RGBA{R: 212, G: 175, B: 55, A: 255}) // gold
-	dc.DrawRectangle(0, 0, float64(w), 8)
-	dc.Fill()
-
-	// Gold accent bar bottom
-	dc.DrawRectangle(0, float64(h)-8, float64(w), 8)
-	dc.Fill()
-}
-
-func drawHeader(dc *gg.Context, w int, date string) {
-	// Logo text DnarMasID
-	dc.SetColor(color.RGBA{R: 212, G: 175, B: 55, A: 255})
-	dc.DrawStringAnchored("DnarMasID", float64(w)/2, 60, 0.5, 0.5)
-
-	// Title
-	dc.SetColor(color.White)
-	dc.DrawStringAnchored("📊 Update Harga Emas ANTAM", float64(w)/2, 110, 0.5, 0.5)
-
-	// Date
-	dc.SetColor(color.RGBA{R: 180, G: 180, B: 180, A: 255})
-	dc.DrawStringAnchored(date, float64(w)/2, 150, 0.5, 0.5)
-
-	// Divider
-	dc.SetColor(color.RGBA{R: 212, G: 175, B: 55, A: 100})
-	dc.DrawLine(60, 175, float64(w)-60, 175)
-	dc.SetLineWidth(1)
-	dc.Stroke()
-}
-
-func drawPriceTable(dc *gg.Context, w int, prices []models.GoldPrice) {
-	startY := 210.0
-	rowH := 70.0
-
-	for i, p := range prices {
-		y := startY + float64(i)*rowH
-
-		// Alternating row background
-		if i%2 == 0 {
-			dc.SetColor(color.RGBA{R: 30, G: 30, B: 30, A: 255})
-			dc.DrawRectangle(60, y-5, float64(w)-120, rowH-5)
-			dc.Fill()
-		}
-
-		// Gram label
-		dc.SetColor(color.RGBA{R: 212, G: 175, B: 55, A: 255})
-		dc.DrawStringAnchored(fmt.Sprintf("%.1f gr", p.Gram), 130, y+30, 0.5, 0.5)
-
-		// Buy price
-		dc.SetColor(color.White)
-		dc.DrawStringAnchored(fmt.Sprintf("Rp %s", formatRupiah(p.BuyPrice)), float64(w)/2, y+30, 0.5, 0.5)
-
-		// Sell label
-		dc.SetColor(color.RGBA{R: 150, G: 150, B: 150, A: 255})
-		dc.DrawStringAnchored(fmt.Sprintf("Jual: %s", formatRupiah(p.SellPrice)), float64(w)-130, y+30, 0.5, 0.5)
-
-		if i >= 7 { // Batasi tampil 8 baris
-			break
-		}
-	}
-}
-
-func drawChangeIndicator(dc *gg.Context, w int, changeAmt int64, changePct float64, trend string) {
-	y := 800.0
-
-	// Background pill
-	bgColor := color.RGBA{R: 39, G: 174, B: 96, A: 200} // green
-	if trend == "down" {
-		bgColor = color.RGBA{R: 231, G: 76, B: 60, A: 200} // red
-	} else if trend == "stable" {
-		bgColor = color.RGBA{R: 100, G: 100, B: 100, A: 200}
-	}
-
-	dc.SetColor(bgColor)
-	dc.DrawRoundedRectangle(float64(w)/2-200, y-25, 400, 55, 28)
-	dc.Fill()
-
-	// Text
-	sign := "+"
-	if changeAmt < 0 {
-		sign = ""
-	}
-	trendEmoji := "📈"
-	if trend == "down" {
-		trendEmoji = "📉"
-	} else if trend == "stable" {
-		trendEmoji = "➡️"
-	}
-
-	dc.SetColor(color.White)
-	text := fmt.Sprintf("%s %sRp %s (%s%.2f%%)", trendEmoji, sign, formatRupiah(changeAmt), sign, changePct)
-	dc.DrawStringAnchored(text, float64(w)/2, y+5, 0.5, 0.5)
-}
-
-func drawBranding(dc *gg.Context, w, h int) {
-	dc.SetColor(color.RGBA{R: 212, G: 175, B: 55, A: 180})
-	dc.DrawStringAnchored("@DnarMasID • Update Setiap Hari", float64(w)/2, float64(h)-40, 0.5, 0.5)
-}
 
 func formatRupiah(amount int64) string {
 	s := fmt.Sprintf("%d", abs(amount))
@@ -215,8 +194,6 @@ func abs(x int64) int64 {
 
 // GenerateVideo — placeholder, butuh FFmpeg di production
 func (g *MediaGenerator) GenerateVideo(event *models.GoldScrapedEvent) (*models.MediaReadyEvent, error) {
-	// TODO: Implementasi video generation dengan FFmpeg
-	// Untuk sekarang, buat placeholder file txt sebagai marker
 	fileName := fmt.Sprintf("gold_%s.mp4.todo", event.Date)
 	filePath := filepath.Join(g.cfg.MediaOutputPath, fileName)
 
@@ -224,12 +201,11 @@ func (g *MediaGenerator) GenerateVideo(event *models.GoldScrapedEvent) (*models.
 	if err != nil {
 		return nil, err
 	}
-	f.WriteString(fmt.Sprintf("Video placeholder for %s - implement FFmpeg here\nGenerated at: %s",
+	f.WriteString(fmt.Sprintf("Video placeholder for %s\nGenerated at: %s",
 		event.Date, time.Now().Format(time.RFC3339)))
 	f.Close()
 
 	log.Printf("[media-generator] 🎬 Video placeholder created: %s", fileName)
-	log.Printf("[media-generator] ⚠️  Implement FFmpeg video generation for production!")
 
 	media := models.GeneratedMedia{
 		PriceID:   event.PriceID,
@@ -247,4 +223,27 @@ func (g *MediaGenerator) GenerateVideo(event *models.GoldScrapedEvent) (*models.
 		FilePath:  filePath,
 		FileName:  fileName,
 	}, nil
+}
+func formatDate(dateStr string) string {
+	t, err := time.Parse("2006-01-02", dateStr)
+	if err != nil {
+		return dateStr
+	}
+
+	monthNames := map[time.Month]string{
+		time.January:   "Jan",
+		time.February:  "Feb",
+		time.March:     "Mar",
+		time.April:     "Apr",
+		time.May:       "Mei",
+		time.June:      "Jun",
+		time.July:      "Jul",
+		time.August:    "Agu",
+		time.September: "Sep",
+		time.October:   "Okt",
+		time.November:  "Nov",
+		time.December:  "Des",
+	}
+
+	return fmt.Sprintf("%02d %s %d", t.Day(), monthNames[t.Month()], t.Year())
 }

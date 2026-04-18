@@ -24,7 +24,10 @@ func NewAntamScraper(cfg *config.Config, db *gorm.DB) *AntamScraper {
 }
 
 // Run menjalankan scraping dan return GoldScrapedEvent
-func (s *AntamScraper) Run() (*models.GoldScrapedEvent, error) {
+func (s *AntamScraper) Run(forceDummy bool) (*models.GoldScrapedEvent, error) {
+	if forceDummy {
+		return s.runDummy()
+	}
 	log.Printf("[scraper] Scraping Antam: %s", s.cfg.AntamURL)
 
 	// Gunakan lokasi Asia/Jakarta secara konsisten
@@ -113,6 +116,34 @@ func (s *AntamScraper) Run() (*models.GoldScrapedEvent, error) {
 		Trend:            trend,
 		BuybackChangeAmt: bbChangeAmt,
 		BuybackTrend:     bbTrend,
+	}
+
+	return event, nil
+}
+
+func (s *AntamScraper) runDummy() (*models.GoldScrapedEvent, error) {
+	log.Println("[scraper] 🧪 Running in FORCE DUMMY mode")
+	loc, _ := time.LoadLocation("Asia/Jakarta")
+	today := time.Now().In(loc).Truncate(24 * time.Hour)
+
+	prices := devFallbackPrices(today)
+
+	// Simpan ke DB agar calcChange bisa bekerja (perlu data kemarin atau hari ini)
+	for i := range prices {
+		s.db.Save(&prices[i])
+	}
+
+	// Buat event dummy
+	event := &models.GoldScrapedEvent{
+		Date:             today.Format("2006-01-02"),
+		UpdateTime:       today.Format("02 Jan 2006 10:00:00"),
+		PriceID:          prices[0].ID,
+		Prices:           prices,
+		ChangePct:        1.25,
+		ChangeAmt:        15000,
+		Trend:            "down",
+		BuybackChangeAmt: 0,
+		BuybackTrend:     "stable",
 	}
 
 	return event, nil
