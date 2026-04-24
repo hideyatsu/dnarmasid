@@ -45,6 +45,7 @@ const (
 	PlatformThreads   Platform = "threads"
 	PlatformYouTube   Platform = "youtube"
 	PlatformTikTok    Platform = "tiktok"
+	PlatformGeneral   Platform = "general"
 )
 
 type ContentType string

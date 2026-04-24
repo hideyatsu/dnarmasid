@@ -23,3 +23,4 @@ volumes/
 
 # Temporary files
 tmp/*
+.roo

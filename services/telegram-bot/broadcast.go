@@ -24,56 +24,22 @@ func NewBroadcaster(cfg *config.Config, db *gorm.DB, bot *tgbotapi.BotAPI) *Broa
 	return &Broadcaster{cfg: cfg, db: db, bot: bot}
 }
 
-// SendContent mengirim semua caption per platform ke admin chat
+// SendContent mengirim satu caption tunggal hasil AI ke chat yang ditentukan (Admin atau Topic Grup)
 func (b *Broadcaster) SendContent(event *models.ContentReadyEvent) error {
-	adminID := b.cfg.TelegramAdminChatID
-
-	// ── Header
-	header := fmt.Sprintf(
-		"━━━━━━━━━━━━━━━━━━━━━━\n"+
-			"📊 *DAILY GOLD REPORT — DnarMasID*\n"+
-			"📅 %s\n"+
-			"━━━━━━━━━━━━━━━━━━━━━━\n\n"+
-			"💡 *Analisis:*\n%s",
-		event.Date,
-		event.Analysis,
-	)
-	b.sendMarkdown(adminID, 0, header)
-
-	// ── Caption per platform
-	platforms := []struct {
-		key   models.Platform
-		emoji string
-		label string
-	}{
-		{models.PlatformInstagram, "📸", "INSTAGRAM"},
-		{models.PlatformFacebook, "👥", "FACEBOOK"},
-		{models.PlatformThreads, "🧵", "THREADS"},
-		{models.PlatformTwitter, "🐦", "TWITTER / X"},
-		{models.PlatformYouTube, "▶️", "YOUTUBE"},
-		{models.PlatformTikTok, "🎵", "TIKTOK"},
+	if b.cfg.TelegramGroupID == 0 {
+		return fmt.Errorf("TELEGRAM_GROUP_ID belum dikonfigurasi")
 	}
 
-	for _, p := range platforms {
-		content, ok := event.Contents[p.key]
-		if !ok || content == "" {
-			continue
-		}
+	chatID := b.cfg.TelegramGroupID
+	threadID := b.cfg.TelegramThreadPostID
 
-		// Kirim divider + label platform
-		divider := fmt.Sprintf("━━━━━━━━━━━━━━━━━━━━━━\n%s *%s*\n━━━━━━━━━━━━━━━━━━━━━━",
-			p.emoji, p.label)
-		b.sendMarkdown(adminID, 0, divider)
-
-		// Kirim konten (plain text supaya bisa di-copy langsung)
-		b.sendText(adminID, 0, content)
-
-		log.Printf("[broadcaster] ✅ Sent %s caption to admin", p.key)
+	content, ok := event.Contents[models.PlatformGeneral]
+	if !ok || content == "" {
+		return fmt.Errorf("caption tidak ditemukan")
 	}
 
-	// ── Footer
-	footer := "━━━━━━━━━━━━━━━━━━━━━━\n✅ *Semua caption siap!*\nCopy-paste ke masing-masing platform.\n@DnarMasID"
-	b.sendMarkdown(adminID, 0, footer)
+	// Kirim konten utama
+	b.sendText(chatID, threadID, content)
 
 	// Update status DB
 	b.db.Model(&models.GeneratedContent{}).
@@ -85,13 +51,12 @@ func (b *Broadcaster) SendContent(event *models.ContentReadyEvent) error {
 
 // SendMedia mengirim gambar/video ke admin chat
 func (b *Broadcaster) SendMedia(event *models.MediaReadyEvent) error {
-	chatID := b.cfg.TelegramAdminChatID
-	threadID := 0
-
-	if b.cfg.TelegramGroupID != 0 {
-		chatID = b.cfg.TelegramGroupID
-		threadID = b.cfg.TelegramThreadPostID
+	if b.cfg.TelegramGroupID == 0 {
+		return fmt.Errorf("TELEGRAM_GROUP_ID belum dikonfigurasi")
 	}
+
+	chatID := b.cfg.TelegramGroupID
+	threadID := b.cfg.TelegramThreadPostID
 
 	switch event.MediaType {
 	case models.MediaTypeImage:
@@ -111,13 +76,13 @@ func (b *Broadcaster) sendImageFile(chatID int64, threadID int, event *models.Me
 	}
 	defer f.Close()
 
-	caption := fmt.Sprintf("🖼️ *Infografis Harga Emas*\n📅 %s\n\nSiap diposting ke Instagram, Facebook, Threads.", event.Date)
+	caption := fmt.Sprintf("<b>🖼️ Infografis Harga Emas</b>\n📅 %s\n\nSiap diposting ke Instagram, Facebook, Threads.", event.Date)
 
 	params := tgbotapi.Params{}
 	params.AddNonZero64("chat_id", chatID)
 	params.AddNonZero("message_thread_id", threadID)
 	params.AddNonEmpty("caption", caption)
-	params.AddNonEmpty("parse_mode", "Markdown")
+	params.AddNonEmpty("parse_mode", "HTML")
 
 	_, err = b.bot.UploadFiles("sendPhoto", params, []tgbotapi.RequestFile{{
 		Name: "photo",
@@ -140,8 +105,8 @@ func (b *Broadcaster) sendImageFile(chatID int64, threadID int, event *models.Me
 func (b *Broadcaster) sendVideoFile(chatID int64, threadID int, event *models.MediaReadyEvent) error {
 	// Skip placeholder .todo file
 	if strings.HasSuffix(event.FileName, ".todo") {
-		b.sendMarkdown(chatID, threadID,
-			"🎬 *Video/Reels*\n⚠️ Video generation belum diimplementasikan.\nImplement FFmpeg di `services/media-generator/image.go` → `GenerateVideo()`")
+		b.sendHTML(chatID, threadID,
+			"<b>🎬 Video/Reels</b>\n⚠️ Video generation belum diimplementasikan.\nImplement FFmpeg di <code>services/media-generator/image.go</code> → <code>GenerateVideo()</code>")
 		return nil
 	}
 
@@ -151,13 +116,13 @@ func (b *Broadcaster) sendVideoFile(chatID int64, threadID int, event *models.Me
 	}
 	defer f.Close()
 
-	caption := fmt.Sprintf("🎬 *Video/Reels Harga Emas*\n📅 %s\n\nSiap diposting ke TikTok, YouTube Shorts, Instagram Reels.", event.Date)
+	caption := fmt.Sprintf("<b>🎬 Video/Reels Harga Emas</b>\n📅 %s\n\nSiap diposting ke TikTok, YouTube Shorts, Instagram Reels.", event.Date)
 
 	params := tgbotapi.Params{}
 	params.AddNonZero64("chat_id", chatID)
 	params.AddNonZero("message_thread_id", threadID)
 	params.AddNonEmpty("caption", caption)
-	params.AddNonEmpty("parse_mode", "Markdown")
+	params.AddNonEmpty("parse_mode", "HTML")
 
 	_, err = b.bot.UploadFiles("sendVideo", params, []tgbotapi.RequestFile{{
 		Name: "video",
@@ -180,14 +145,14 @@ func (b *Broadcaster) sendVideoFile(chatID int64, threadID int, event *models.Me
 // Helper send functions
 // ─────────────────────────────────────────
 
-func (b *Broadcaster) sendMarkdown(chatID int64, threadID int, text string) {
+func (b *Broadcaster) sendHTML(chatID int64, threadID int, text string) {
 	params := tgbotapi.Params{}
 	params.AddNonZero64("chat_id", chatID)
 	params.AddNonZero("message_thread_id", threadID)
 	params.AddNonEmpty("text", text)
-	params.AddNonEmpty("parse_mode", "Markdown")
+	params.AddNonEmpty("parse_mode", "HTML")
 	if _, err := b.bot.MakeRequest("sendMessage", params); err != nil {
-		log.Printf("[broadcaster] ⚠️ sendMarkdown error: %v", err)
+		log.Printf("[broadcaster] ⚠️ sendHTML error: %v", err)
 	}
 }
 
@@ -203,13 +168,12 @@ func (b *Broadcaster) sendText(chatID int64, threadID int, text string) {
 
 // SendScrapeNotification mengirim notifikasi singkat harga harian
 func (b *Broadcaster) SendScrapeNotification(event *models.GoldScrapedEvent) error {
-	chatID := b.cfg.TelegramAdminChatID
-	threadID := 0
-
-	if b.cfg.TelegramGroupID != 0 {
-		chatID = b.cfg.TelegramGroupID
-		threadID = b.cfg.TelegramThreadGeneralID
+	if b.cfg.TelegramGroupID == 0 {
+		return fmt.Errorf("TELEGRAM_GROUP_ID belum dikonfigurasi")
 	}
+
+	chatID := b.cfg.TelegramGroupID
+	threadID := b.cfg.TelegramThreadGeneralID
 
 	// Cari harga 1 gram
 	var price1g models.GoldPrice
