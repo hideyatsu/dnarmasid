@@ -21,16 +21,16 @@ type Config struct {
 	RedisPort string
 
 	// Telegram
-	TelegramBotToken    string
-	TelegramChannelID   string
-	TelegramAdminChatID int64
-	TelegramGroupID     int64
+	TelegramBotToken        string
+	TelegramChannelID       string
+	TelegramAdminChatID     int64
+	TelegramGroupID         int64
 	TelegramThreadGeneralID int
 	TelegramThreadPostID    int
 
-	// AI
-	AnthropicAPIKey string
-	AnthropicModel  string
+	// AI (Ollama)
+	OllamaHost  string
+	OllamaModel string
 
 	// Scraper
 	AntamURL             string
@@ -66,15 +66,15 @@ func Load() *Config {
 		RedisHost: getEnv("REDIS_HOST", "redis"),
 		RedisPort: getEnv("REDIS_PORT", "6379"),
 
-		TelegramBotToken:    getEnv("TELEGRAM_BOT_TOKEN", ""),
-		TelegramChannelID:   getEnv("TELEGRAM_CHANNEL_ID", ""),
-		TelegramAdminChatID: adminChatID,
-		TelegramGroupID:     groupID,
+		TelegramBotToken:        getEnv("TELEGRAM_BOT_TOKEN", ""),
+		TelegramChannelID:       getEnv("TELEGRAM_CHANNEL_ID", ""),
+		TelegramAdminChatID:     adminChatID,
+		TelegramGroupID:         groupID,
 		TelegramThreadGeneralID: threadGeneral,
 		TelegramThreadPostID:    threadPost,
 
-		AnthropicAPIKey: getEnv("ANTHROPIC_API_KEY", ""),
-		AnthropicModel:  getEnv("ANTHROPIC_MODEL", "claude-sonnet-4-20250514"),
+		OllamaHost:  getEnv("OLLAMA_HOST", "http://ollama:11434"),
+		OllamaModel: getEnv("OLLAMA_MODEL", "gemma4:31b-cloud"),
 
 		AntamURL:             getEnv("ANTAM_URL", "https://www.logammulia.com/id/harga-emas-hari-ini"),
 		ScrapeTimeoutSeconds: scrapeTimeout,
