@@ -25,163 +25,132 @@ func NewContentGenerator(cfg *config.Config, db *gorm.DB) *ContentGenerator {
 	return &ContentGenerator{cfg: cfg, db: db}
 }
 
-// Generate membuat semua caption untuk semua platform
+// Generate membuat satu caption tunggal sesuai template
 func (g *ContentGenerator) Generate(event *models.GoldScrapedEvent) (*models.ContentReadyEvent, error) {
-	contents := make(map[models.Platform]string)
+	log.Printf("[ai-generator] Generating unified caption for %s...", event.Date)
 
-	platforms := []models.Platform{
-		models.PlatformInstagram,
-		models.PlatformTwitter,
-		models.PlatformFacebook,
-		models.PlatformThreads,
-		models.PlatformYouTube,
-		models.PlatformTikTok,
-	}
-
-	for _, platform := range platforms {
-		log.Printf("[ai-generator] Generating content for %s...", platform)
-
-		content, err := g.generateForPlatform(platform, event)
-		if err != nil {
-			log.Printf("[ai-generator] ⚠️ Failed for %s: %v", platform, err)
-			content = g.fallbackContent(platform, event)
+	// Ambil data 1 gram
+	var p1g models.GoldPrice
+	for _, p := range event.Prices {
+		if p.Gram == 1 {
+			p1g = p
+			break
 		}
-
-		contents[platform] = content
-
-		// Simpan ke DB
-		g.db.Create(&models.GeneratedContent{
-			PriceID:     event.PriceID,
-			Platform:    platform,
-			ContentType: models.ContentCaption,
-			ContentText: content,
-			Status:      "pending",
-		})
-
-		time.Sleep(500 * time.Millisecond) // rate limit API
 	}
 
-	// Generate analisis
-	analysis, err := g.generateAnalysis(event)
+	if p1g.BuyPrice == 0 {
+		return nil, fmt.Errorf("data harga 1 gram tidak ditemukan")
+	}
+
+	// Hitung Spread
+	spreadAmt := p1g.BuyPrice - p1g.SellPrice
+	spreadPct := (float64(spreadAmt) / float64(p1g.BuyPrice)) * 100
+
+	// Bangun prompt dengan data yang sudah ada
+	prompt := g.buildUnifiedPrompt(event, p1g, spreadAmt, spreadPct)
+
+	// Call Ollama
+	content, err := g.callOllama(prompt)
 	if err != nil {
-		analysis = g.fallbackAnalysis(event)
+		log.Printf("[ai-generator] ⚠️ AI Generation failed: %v", err)
+		content = g.fallbackUnifiedContent(event, p1g, spreadAmt, spreadPct)
 	}
+
+	// Simpan ke DB (sebagai general)
+	g.db.Create(&models.GeneratedContent{
+		PriceID:     event.PriceID,
+		Platform:    models.PlatformGeneral,
+		ContentType: models.ContentCaption,
+		ContentText: content,
+		Status:      "pending",
+	})
 
 	return &models.ContentReadyEvent{
 		PriceID:  event.PriceID,
 		Date:     event.Date,
-		Contents: contents,
-		Analysis: analysis,
+		Contents: map[models.Platform]string{models.PlatformGeneral: content},
+		Analysis: "Unified content generated",
 	}, nil
 }
 
-// generateForPlatform memanggil Anthropic API untuk generate caption
-func (g *ContentGenerator) generateForPlatform(platform models.Platform, event *models.GoldScrapedEvent) (string, error) {
-	prompt := g.buildPrompt(platform, event)
-	return g.callAnthropic(prompt)
+func (g *ContentGenerator) buildUnifiedPrompt(event *models.GoldScrapedEvent, p1g models.GoldPrice, spread int64, pct float64) string {
+	tEmoji := trendEmoji(event.Trend)
+	bbTEmoji := trendEmoji(event.BuybackTrend)
+
+	return fmt.Sprintf(`Generate an ENGAGING and EDUCATIONAL Instagram/Social Media caption about Antam gold prices in INDONESIAN language.
+
+CRITICAL INSTRUCTIONS:
+1. Use INDONESIAN language for the entire output.
+2. DO NOT use any Markdown formatting (no bold **, no italics _, no separators ***). Use plain text only.
+3. Strictly follow the provided template structure.
+
+DATA:
+Date: %s
+Price: Rp %s / gr (%s Rp %s)
+Buyback: Rp %s / gr (%s Rp %s)
+Spread: Rp %s (%.2f%%)
+Trend: %s
+
+MANDATORY TEMPLATE (Must be in INDONESIAN, strictly no bold):
+Harga Emas Antam Hari Ini
+
+Tanggal: [Date]
+Harga: [Price + Trend]
+Buyback: [Buyback + Trend]
+
+Spread: [Spread]
+Trend: [Provide a brief Indonesian market trend summary]
+
+[Provide 2-3 sentences of INSIGHT/ANALYSIS in INDONESIAN about whether it is a good time to buy/sell based on the data above]
+
+[Create a creative and persuasive Call to Action in INDONESIAN, encouraging users to use our Telegram bot for real-time updates and price alerts by clicking the link in bio]
+
+[Add 10-15 relevant hashtags in Indonesian/English]
+
+Tone: Professional, persuasive, and easy to understand.`,
+		event.Date,
+		formatRupiah(p1g.BuyPrice), tEmoji, formatRupiah(event.ChangeAmt),
+		formatRupiah(p1g.SellPrice), bbTEmoji, formatRupiah(event.BuybackChangeAmt),
+		formatRupiah(spread), pct, event.Trend)
 }
 
-// buildPrompt membuat prompt spesifik per platform
-func (g *ContentGenerator) buildPrompt(platform models.Platform, event *models.GoldScrapedEvent) string {
-	priceTable := formatPriceTable(event.Prices)
-	trendEmoji := trendEmoji(event.Trend)
-	changeStr := formatChange(event.ChangeAmt, event.ChangePct, event.Trend)
+func (g *ContentGenerator) fallbackUnifiedContent(event *models.GoldScrapedEvent, p1g models.GoldPrice, spread int64, pct float64) string {
+	return fmt.Sprintf(`Harga Emas Antam Hari Ini
 
-	baseInfo := fmt.Sprintf(`
-Data Harga Emas Antam Hari Ini (%s):
-%s
+Tanggal: %s
+Harga: Rp %s / gr (%s)
+Buyback: Rp %s / gr
+Spread: Rp %s (%.2f%%)
+Trend: %s
 
-Perubahan vs kemarin: %s %s
-Tren: %s
-Akun sosmed: @DnarMasID
-`, event.Date, priceTable, trendEmoji, changeStr, event.Trend)
+Harga emas hari ini menunjukkan pergerakan %s. Pantau terus untuk mendapatkan harga terbaik.
 
-	switch platform {
-	case models.PlatformInstagram:
-		return fmt.Sprintf(`Buat caption Instagram dalam Bahasa Indonesia yang menarik dan informatif tentang harga emas Antam.
-Format: caption pendek-sedang (max 2200 karakter), emoji yang relevan, 15-20 hashtag populer di akhir.
-Gaya: edukasi investasi, friendly, modern.
-Sertakan CTA: "Follow @DnarMasID untuk update harga emas setiap hari".
-%s`, baseInfo)
+Butuh update harga real-time?
+Klik link di bio untuk menggunakan bot kami dan pasang Alert Harga agar tidak ketinggalan momentum pasar.
 
-	case models.PlatformTwitter:
-		return fmt.Sprintf(`Buat thread Twitter/X dalam Bahasa Indonesia tentang harga emas Antam.
-Format: 5-7 tweet, setiap tweet max 280 karakter, numbering 1/7, 2/7, dst.
-Tweet pertama: hook menarik dengan data utama.
-Tweet terakhir: CTA follow @DnarMasID.
-%s`, baseInfo)
-
-	case models.PlatformFacebook:
-		return fmt.Sprintf(`Buat post Facebook dalam Bahasa Indonesia yang informatif dan engaging tentang harga emas Antam.
-Format: paragraf panjang (500-800 kata), bisa pakai emoji, tabel data, analisis singkat.
-Gaya: edukatif, cocok untuk semua umur.
-Akhiri dengan: "Ikuti halaman DnarMasID untuk info investasi emas harian."
-%s`, baseInfo)
-
-	case models.PlatformThreads:
-		return fmt.Sprintf(`Buat post Threads dalam Bahasa Indonesia yang singkat dan menarik tentang harga emas Antam.
-Format: 3-5 post berantai, setiap post max 500 karakter, casual dan conversational.
-Sertakan emoji yang relevan.
-%s`, baseInfo)
-
-	case models.PlatformYouTube:
-		return fmt.Sprintf(`Buat title dan deskripsi YouTube dalam Bahasa Indonesia untuk video update harga emas Antam.
-Format:
-TITLE: (max 100 karakter, SEO-friendly, clickbait positif)
-DESKRIPSI:
-- Paragraf intro (2-3 kalimat)
-- Tabel harga lengkap
-- Analisis singkat
-- Timestamps (00:00 Intro, 00:30 Harga Emas, dst)
-- Subscribe @DnarMasID
-- Hashtag: #HargaEmas #Antam #InvestasiEmas
-%s`, baseInfo)
-
-	case models.PlatformTikTok:
-		return fmt.Sprintf(`Buat caption TikTok dalam Bahasa Indonesia yang singkat dan viral tentang harga emas Antam.
-Format: max 300 karakter, energik, pakai trending emoji, 5-8 hashtag TikTok populer.
-Gaya: Gen Z friendly, FOMO marketing positif.
-%s`, baseInfo)
-	}
-
-	return ""
+#HargaEmas #Antam #DnarMasID`,
+		event.Date, formatRupiah(p1g.BuyPrice), formatChange(event.ChangeAmt, event.ChangePct, event.Trend),
+		formatRupiah(p1g.SellPrice), formatRupiah(spread), pct, event.Trend, event.Trend)
 }
 
-func (g *ContentGenerator) generateAnalysis(event *models.GoldScrapedEvent) (string, error) {
-	priceTable := formatPriceTable(event.Prices)
-	prompt := fmt.Sprintf(`Berikan analisis singkat harga emas Antam dalam Bahasa Indonesia (max 300 kata).
-Sertakan: interpretasi tren, faktor yang mungkin mempengaruhi, saran singkat untuk investor.
-Gaya: profesional tapi mudah dipahami.
-
-Data: %s
-Perubahan: %+.2f%% (Rp %+d)
-Tren: %s`, priceTable, event.ChangePct, event.ChangeAmt, event.Trend)
-
-	return g.callAnthropic(prompt)
-}
-
-// callAnthropic memanggil Anthropic API
-func (g *ContentGenerator) callAnthropic(prompt string) (string, error) {
+// callOllama calls the local Ollama API for generating content
+func (g *ContentGenerator) callOllama(prompt string) (string, error) {
 	reqBody := map[string]any{
-		"model":      g.cfg.AnthropicModel,
-		"max_tokens": 1024,
-		"messages": []map[string]string{
-			{"role": "user", "content": prompt},
-		},
+		"model":  g.cfg.OllamaModel,
+		"prompt": prompt,
+		"stream": false,
 	}
 
 	body, _ := json.Marshal(reqBody)
 
-	req, err := http.NewRequest("POST", "https://api.anthropic.com/v1/messages", bytes.NewReader(body))
+	req, err := http.NewRequest("POST", g.cfg.OllamaHost+"/api/generate", bytes.NewReader(body))
 	if err != nil {
 		return "", err
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("x-api-key", g.cfg.AnthropicAPIKey)
-	req.Header.Set("anthropic-version", "2023-06-01")
 
-	client := &http.Client{Timeout: 30 * time.Second}
+	client := &http.Client{Timeout: 120 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
 		return "", err
@@ -191,21 +160,18 @@ func (g *ContentGenerator) callAnthropic(prompt string) (string, error) {
 	respBody, _ := io.ReadAll(resp.Body)
 
 	var result struct {
-		Content []struct {
-			Type string `json:"type"`
-			Text string `json:"text"`
-		} `json:"content"`
+		Response string `json:"response"`
 	}
 
 	if err := json.Unmarshal(respBody, &result); err != nil {
 		return "", fmt.Errorf("unmarshal error: %w", err)
 	}
 
-	if len(result.Content) == 0 {
-		return "", fmt.Errorf("empty response from Anthropic")
+	if result.Response == "" {
+		return "", fmt.Errorf("empty response from Ollama")
 	}
 
-	return result.Content[0].Text, nil
+	return result.Response, nil
 }
 
 // ─────────────────────────────────────────
@@ -267,10 +233,10 @@ func formatChange(amt int64, pct float64, trend string) string {
 func trendEmoji(trend string) string {
 	switch trend {
 	case "up":
-		return "📈"
+		return "▲"
 	case "down":
-		return "📉"
+		return "▼"
 	default:
-		return "➡️"
+		return "▬"
 	}
 }

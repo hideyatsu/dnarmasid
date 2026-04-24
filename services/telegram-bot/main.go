@@ -47,7 +47,6 @@ func main() {
 		handler.Listen(quit)
 	}()
 
-	/* 
 	// ─── Goroutine 2: Consume content.ready → kirim caption ke admin
 	wg.Add(1)
 	go func() {
@@ -70,7 +69,6 @@ func main() {
 			}
 		}
 	}()
-	*/
 
 	// ─── Goroutine 3: Consume media.ready → kirim gambar/video ke admin
 	wg.Add(1)
