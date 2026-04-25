@@ -10,17 +10,6 @@
 #   6. media-generator — buat gambar & video
 #   7. telegram-bot   — kirim hasil ke bot/channel
 
-networks:
-  dnarmasid-net:
-    driver: bridge
-  ollama_network:
-    external: true
-
-volumes:
-  mysql-data:
-  redis-data:
-  media-data:
-
 services:
 
   # ─────────────────────────────────────────
@@ -38,7 +27,7 @@ services:
       MYSQL_PASSWORD: ${MYSQL_PASSWORD}
       TZ: ${TZ}
     ports:
-      - "3307:3306"
+      - "3306:3306"
     volumes:
       - mysql-data:/var/lib/mysql
       - ./migrations/init.sql:/docker-entrypoint-initdb.d/init.sql
@@ -56,8 +45,6 @@ services:
     restart: unless-stopped
     environment:
       TZ: ${TZ}
-    ports:
-      - "6380:6379"
     volumes:
       - redis-data:/data
     networks:
@@ -67,10 +54,6 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-
-  # ─────────────────────────────────────────
-  # SERVICES
-  # ─────────────────────────────────────────
 
   scheduler:
     build:
@@ -84,8 +67,6 @@ services:
         condition: service_healthy
     networks:
       - dnarmasid-net
-    # Scheduler hanya butuh Redis (publish job)
-    # Tidak butuh MySQL, tidak butuh media volume
 
   scraper:
     build:
@@ -101,7 +82,10 @@ services:
         condition: service_healthy
     networks:
       - dnarmasid-net
-    # Scraper: consume Redis (job.scrape) → simpan MySQL → publish Redis (gold.scraped)
+
+  # ─────────────────────────────────────────
+  # SERVICES
+  # ─────────────────────────────────────────
 
   ai-generator:
     build:
@@ -118,7 +102,6 @@ services:
     networks:
       - dnarmasid-net
       - ollama_network
-    # AI Generator: consume Redis (gold.scraped) → call Ollama API → publish Redis (content.ready)
 
   media-generator:
     build:
@@ -136,7 +119,6 @@ services:
       - media-data:/app/volumes/media
     networks:
       - dnarmasid-net
-    # Media Generator: consume Redis (gold.scraped) → buat gambar/video → publish Redis (media.ready)
 
   telegram-bot:
     build:
@@ -151,7 +133,17 @@ services:
       redis:
         condition: service_healthy
     volumes:
-      - media-data:/app/volumes/media  # baca file media dari media-generator
+      - media-data:/app/volumes/media
     networks:
       - dnarmasid-net
-    # Telegram Bot: consume Redis (content.ready + media.ready) → kirim ke Telegram
+
+networks:
+  dnarmasid-net:
+    driver: bridge
+  ollama_network:
+    external: true
+
+volumes:
+  mysql-data:
+  redis-data:
+  media-data:
