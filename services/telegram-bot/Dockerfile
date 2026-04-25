@@ -8,8 +8,11 @@ RUN go mod download
 
 COPY shared/ ./shared/
 COPY services/telegram-bot/ ./services/telegram-bot/
+COPY scripts/ ./scripts/
 
-RUN go mod tidy && CGO_ENABLED=0 GOOS=linux go build -o /bin/telegram-bot ./services/telegram-bot
+RUN go mod tidy && \
+    CGO_ENABLED=0 GOOS=linux go build -o /bin/telegram-bot ./services/telegram-bot && \
+    CGO_ENABLED=0 GOOS=linux go build -o /bin/test-push ./scripts/test_push.go
 
 FROM alpine:3.19
 
@@ -18,6 +21,7 @@ RUN apk --no-cache add ca-certificates tzdata
 WORKDIR /app
 
 COPY --from=builder /bin/telegram-bot .
+COPY --from=builder /bin/test-push .
 
 VOLUME ["/app/volumes/media"]
 
