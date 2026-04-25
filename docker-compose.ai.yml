@@ -1,0 +1,26 @@
+# ================================
+# DnarMasID — AI Infrastructure
+# ================================
+
+services:
+  ollama:
+    image: ollama/ollama:latest
+    container_name: dnarmasid-ollama
+    restart: unless-stopped
+    environment:
+      OLLAMA_HOST: 0.0.0.0:11434
+      OLLAMA_MODELS: /root/.ollama
+      TZ: ${TZ:-Asia/Jakarta}
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-data:/root/.ollama
+    networks:
+      - dnarmasid-net
+
+networks:
+  dnarmasid-net:
+    external: true
+
+volumes:
+  ollama-data:

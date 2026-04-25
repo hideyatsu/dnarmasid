@@ -13,12 +13,13 @@
 networks:
   dnarmasid-net:
     driver: bridge
+  ollama_network:
+    external: true
 
 volumes:
   mysql-data:
   redis-data:
   media-data:
-  ollama-data:
 
 services:
 
@@ -68,30 +69,6 @@ services:
       retries: 5
 
   # ─────────────────────────────────────────
-  # AI INFRASTRUCTURE
-  # ─────────────────────────────────────────
-
-  ollama:
-    image: ollama/ollama:latest
-    container_name: dnarmasid-ollama
-    restart: unless-stopped
-    environment:
-      OLLAMA_HOST: 0.0.0.0:11434
-      OLLAMA_MODELS: /root/.ollama
-      TZ: ${TZ}
-    ports:
-      - "11434:11434"
-    volumes:
-      - ollama-data:/root/.ollama
-    networks:
-      - dnarmasid-net
-    healthcheck:
-      test: ["CMD", "ollama", "list"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-
-  # ─────────────────────────────────────────
   # SERVICES
   # ─────────────────────────────────────────
 
@@ -138,10 +115,9 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-      ollama:
-        condition: service_healthy
     networks:
       - dnarmasid-net
+      - ollama_network
     # AI Generator: consume Redis (gold.scraped) → call Ollama API → publish Redis (content.ready)
 
   media-generator:
