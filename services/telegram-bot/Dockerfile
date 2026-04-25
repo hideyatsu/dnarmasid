@@ -12,7 +12,7 @@ COPY scripts/ ./scripts/
 
 RUN go mod tidy && \
     CGO_ENABLED=0 GOOS=linux go build -o /bin/telegram-bot ./services/telegram-bot && \
-    CGO_ENABLED=0 GOOS=linux go build -o /bin/test-push ./scripts/test_push.go
+    CGO_ENABLED=0 GOOS=linux go build -o /bin/test-push ./scripts/test-push
 
 FROM alpine:3.19
 
