@@ -158,6 +158,20 @@ func (s *AntamScraper) scrapeUpdateTime() (*time.Time, error) {
 	)
 	c.SetRequestTimeout(time.Duration(s.cfg.ScrapeTimeoutSeconds) * time.Second)
 
+	c.OnRequest(func(r *colly.Request) {
+		r.Headers.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8")
+		r.Headers.Set("Accept-Language", "en-US,en;q=0.9,id;q=0.8")
+		r.Headers.Set("Cache-Control", "max-age=0")
+		r.Headers.Set("Sec-Ch-Ua", `"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"`)
+		r.Headers.Set("Sec-Ch-Ua-Mobile", "?0")
+		r.Headers.Set("Sec-Ch-Ua-Platform", `"Windows"`)
+		r.Headers.Set("Sec-Fetch-Dest", "document")
+		r.Headers.Set("Sec-Fetch-Mode", "navigate")
+		r.Headers.Set("Sec-Fetch-Site", "none")
+		r.Headers.Set("Sec-Fetch-User", "?1")
+		r.Headers.Set("Upgrade-Insecure-Requests", "1")
+	})
+
 	// URL landing page biasanya basis dari AntamURL
 	landingURL := s.cfg.AntamURL
 	if strings.HasSuffix(landingURL, "/harga-emas-hari-ini") {
@@ -214,6 +228,20 @@ func (s *AntamScraper) scrape(defaultDate time.Time) (time.Time, []models.GoldPr
 	)
 
 	c.SetRequestTimeout(time.Duration(s.cfg.ScrapeTimeoutSeconds) * time.Second)
+
+	c.OnRequest(func(r *colly.Request) {
+		r.Headers.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8")
+		r.Headers.Set("Accept-Language", "en-US,en;q=0.9,id;q=0.8")
+		r.Headers.Set("Cache-Control", "max-age=0")
+		r.Headers.Set("Sec-Ch-Ua", `"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"`)
+		r.Headers.Set("Sec-Ch-Ua-Mobile", "?0")
+		r.Headers.Set("Sec-Ch-Ua-Platform", `"Windows"`)
+		r.Headers.Set("Sec-Fetch-Dest", "document")
+		r.Headers.Set("Sec-Fetch-Mode", "navigate")
+		r.Headers.Set("Sec-Fetch-Site", "none")
+		r.Headers.Set("Sec-Fetch-User", "?1")
+		r.Headers.Set("Upgrade-Insecure-Requests", "1")
+	})
 
 	c.OnHTML("h2.ngc-title", func(e *colly.HTMLElement) {
 		text := strings.TrimSpace(e.Text)
@@ -283,6 +311,20 @@ func (s *AntamScraper) scrape(defaultDate time.Time) (time.Time, []models.GoldPr
 		colly.UserAgent("Mozilla/5.0 (compatible; DnarMasID-Bot/1.0)"),
 	)
 	cBuyback.SetRequestTimeout(time.Duration(s.cfg.ScrapeTimeoutSeconds) * time.Second)
+
+	cBuyback.OnRequest(func(r *colly.Request) {
+		r.Headers.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8")
+		r.Headers.Set("Accept-Language", "en-US,en;q=0.9,id;q=0.8")
+		r.Headers.Set("Cache-Control", "max-age=0")
+		r.Headers.Set("Sec-Ch-Ua", `"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"`)
+		r.Headers.Set("Sec-Ch-Ua-Mobile", "?0")
+		r.Headers.Set("Sec-Ch-Ua-Platform", `"Windows"`)
+		r.Headers.Set("Sec-Fetch-Dest", "document")
+		r.Headers.Set("Sec-Fetch-Mode", "navigate")
+		r.Headers.Set("Sec-Fetch-Site", "none")
+		r.Headers.Set("Sec-Fetch-User", "?1")
+		r.Headers.Set("Upgrade-Insecure-Requests", "1")
+	})
 
 	cBuyback.OnHTML("input#valBasePrice", func(e *colly.HTMLElement) {
 		val := e.Attr("value")
