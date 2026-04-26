@@ -149,26 +149,45 @@ func (s *AntamScraper) scrapeWithChromedp(defaultDate time.Time) (time.Time, []m
 	var prices []models.GoldPrice
 	scrapedDate := defaultDate
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(s.cfg.ScrapeTimeoutSeconds)*time.Second)
+	// Use longer timeout for chromedp as Chrome startup can be slow
+	chromeTimeout := time.Duration(s.cfg.ScrapeTimeoutSeconds+30) * time.Second
+	log.Printf("[scraper] 🔧 Chrome timeout set to: %v", chromeTimeout)
+
+	ctx, cancel := context.WithTimeout(context.Background(), chromeTimeout)
 	defer cancel()
 
 	ctx, cancel = chromedp.NewContext(ctx)
 	defer cancel()
 
+	log.Printf("[scraper] 🔍 Starting chromedp navigation to: %s", s.cfg.AntamURL)
+
+	// Add extra time for initial Chrome startup
+	initialSleep := 5 * time.Second
+	log.Printf("[scraper] ⏳ Waiting %v for Chrome startup...", initialSleep)
+	time.Sleep(initialSleep)
+
 	// Array untuk menyimpan data dari chromedp
 	var htmlContent string
 	var pageTitle string
 
+	// First try a simple connectivity check
+	log.Printf("[scraper] 🔍 Navigating to page...")
+	navStart := time.Now()
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(s.cfg.AntamURL),
 		chromedp.Sleep(3*time.Second), // Wait for JS to render
-		chromedp.OuterHTML("html", &htmlContent),
+		chromedp.OuterHTML("html", &htmlContent, chromedp.ByQuery),
 		chromedp.Text("h2.ngc-title", &pageTitle, chromedp.ByQuery),
 	)
+	navDuration := time.Since(navStart)
+	log.Printf("[scraper] 🔍 Navigation took: %v", navDuration)
 
 	if err != nil {
-		return scrapedDate, nil, fmt.Errorf("chromedp navigation failed: %w", err)
+		log.Printf("[scraper] ❌ chromedp error details: %v (timeout was: %ds)", err, s.cfg.ScrapeTimeoutSeconds)
+		return scrapedDate, nil, fmt.Errorf("chromedp navigation failed after %v: %w", navDuration, err)
 	}
+
+	log.Printf("[scraper] ✅ Navigation successful, HTML length: %d chars", len(htmlContent))
 
 	// Parse date dari title: "Harga Emas Hari Ini, 26 Apr 2026"
 	pageTitle = strings.TrimSpace(pageTitle)
