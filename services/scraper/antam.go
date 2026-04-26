@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"strconv"
@@ -10,6 +11,7 @@ import (
 	"dnarmasid/shared/config"
 	"dnarmasid/shared/models"
 
+	"github.com/chromedp/chromedp"
 	"github.com/gocolly/colly/v2"
 	"gorm.io/gorm"
 )
@@ -149,19 +151,9 @@ func (s *AntamScraper) runDummy() (*models.GoldScrapedEvent, error) {
 	return event, nil
 }
 
-// scrapeUpdateTime mengambil info "Perubahan terakhir" dari landing page
-// dengan retry logic dan multiple user agents untuk bypass anti-bot
+// scrapeUpdateTime menggunakan chromedp headless browser untuk bypass anti-bot
 func (s *AntamScraper) scrapeUpdateTime() (*time.Time, error) {
-	var updateTime *time.Time
-
-	// Multiple user agents untuk rotating
-	userAgents := []string{
-		"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-		"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-		"Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:125.0) Gecko/20100101 Firefox/125.0",
-		"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15",
-		"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-	}
+	var htmlContent string
 
 	// URL landing page biasanya basis dari AntamURL
 	landingURL := s.cfg.AntamURL
@@ -169,140 +161,57 @@ func (s *AntamScraper) scrapeUpdateTime() (*time.Time, error) {
 		landingURL = strings.ReplaceAll(landingURL, "/harga-emas-hari-ini", "")
 	}
 
-	maxRetries := 3
-	for attempt := 0; attempt < maxRetries; attempt++ {
-		if attempt > 0 {
-			// Exponential backoff sebelum retry
-			backoff := time.Duration(attempt*attempt*500) * time.Millisecond
-			log.Printf("[scraper] 🔄 Retry scrapeUpdateTime attempt %d/%d after %v", attempt+1, maxRetries, backoff)
-			time.Sleep(backoff)
-		}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(s.cfg.ScrapeTimeoutSeconds+10)*time.Second)
+	defer cancel()
 
-		ua := userAgents[attempt%len(userAgents)]
+	// Create chromedp context with headless browser
+	ctx, cancel = chromedp.NewContext(ctx, chromedp.WithLogf(log.Printf))
+	defer cancel()
 
-		c := colly.NewCollector(
-			colly.UserAgent(ua),
-		)
-		c.SetRequestTimeout(time.Duration(s.cfg.ScrapeTimeoutSeconds) * time.Second)
+	err := chromedp.Run(ctx,
+		chromedp.Navigate(landingURL),
+		chromedp.Sleep(3*time.Second), // Wait for JS to render
+		chromedp.OuterHTML("html", &htmlContent),
+	)
 
-		// Anti-bot header randomization
-		referers := []string{
-			"https://www.google.com/search?q=logam+mulia+harga+emas",
-			"https://www.bing.com/search?q=harga+emas+hari+ini",
-			"https://www.google.com/",
-			"",
-		}
-		referer := referers[attempt%len(referers)]
+	if err != nil {
+		log.Printf("[scraper] ⚠️ chromedp navigation error: %v", err)
+		return nil, fmt.Errorf("chromedp navigation failed: %w", err)
+	}
 
-		c.OnRequest(func(r *colly.Request) {
-			r.Headers.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7")
-			r.Headers.Set("Accept-Language", "en-US,en;q=0.9,id;q=0.8")
-			r.Headers.Set("Accept-Encoding", "gzip, deflate, br")
-			r.Headers.Set("Cache-Control", "no-cache")
-			r.Headers.Set("Pragma", "no-cache")
-			r.Headers.Set("Sec-Ch-Ua", `"Chromium";v="124", "Google Chrome";v="124", ";Not A Brand";v="99"`)
-			r.Headers.Set("Sec-Ch-Ua-Mobile", "?0")
-			r.Headers.Set("Sec-Ch-Ua-Platform", `"Windows"`)
-			r.Headers.Set("Sec-Fetch-Dest", "document")
-			r.Headers.Set("Sec-Fetch-Mode", "navigate")
-			r.Headers.Set("Sec-Fetch-Site", "none")
-			r.Headers.Set("Sec-Fetch-User", "?1")
-			r.Headers.Set("Upgrade-Insecure-Requests", "1")
-			if referer != "" {
-				r.Headers.Set("Referer", referer)
-			}
-		})
-
-		// Handle errors but continue
-		c.OnError(func(r *colly.Response, err error) {
-			log.Printf("[scraper] Attempt %d error: %v (Status: %d)", attempt+1, err, r.StatusCode)
-		})
-
-		var parseError error
-		c.OnHTML("body", func(e *colly.HTMLElement) {
-			// Skip if we already got the time
-			if updateTime != nil {
-				return
-			}
-
-			// Cari pattern text di body
-			text := e.Text
-			searchKey := "Perubahan terakhir:"
-			idx := strings.Index(text, searchKey)
-			if idx != -1 {
-				// Extract string setela key (contoh: " 05 Apr 2026 07:31:00")
-				raw := strings.TrimSpace(text[idx+len(searchKey) : idx+len(searchKey)+25])
-				// Bersihkan potential noise di akhir
-				parts := strings.Split(raw, "\n")
-				dateStr := strings.TrimSpace(parts[0])
-
-				// Normalisasi bulan
-				dateStr = strings.ReplaceAll(dateStr, "Mei", "May")
-				dateStr = strings.ReplaceAll(dateStr, "Agt", "Aug")
-				dateStr = strings.ReplaceAll(dateStr, "Okt", "Oct")
-				dateStr = strings.ReplaceAll(dateStr, "Des", "Dec")
-
-				// Load lokasi WIB/Jakarta
-				loc, _ := time.LoadLocation("Asia/Jakarta")
-
-				// Layout: 02 Jan 2006 15:04:05
-				if t, err := time.ParseInLocation("02 Jan 2006 15:04:05", dateStr, loc); err == nil {
-					updateTime = &t
-					log.Printf("[scraper] ✅ Successfully scraped update time on attempt %d", attempt+1)
+	// Parse the HTML content to find update time
+	patterns := []string{"Perubahan terakhir:", "Terakhir diupdate:", "Update terakhir:", "perubahan terakhir"}
+	for _, pattern := range patterns {
+		idx := strings.Index(htmlContent, pattern)
+		if idx != -1 {
+			raw := strings.TrimSpace(htmlContent[idx+len(pattern) : idx+len(pattern)+30])
+			// Clean up HTML tags
+			for strings.Contains(raw, "<") {
+				tagStart := strings.Index(raw, "<")
+				tagEnd := strings.Index(raw, ">")
+				if tagStart != -1 && tagEnd != -1 && tagEnd > tagStart {
+					raw = raw[:tagStart] + raw[tagEnd+1:]
 				} else {
-					parseError = fmt.Errorf("failed to parse date '%s': %w", dateStr, err)
-				}
-			} else {
-				// Try alternative patterns
-				altPatterns := []string{
-					"Terakhir diupdate:",
-					"Update terakhir:",
-					"perubahan terakhir",
-				}
-				for _, pattern := range altPatterns {
-					idxAlt := strings.Index(strings.ToLower(text), strings.ToLower(pattern))
-					if idxAlt != -1 {
-						raw := strings.TrimSpace(text[idxAlt+len(pattern) : idxAlt+len(pattern)+25])
-						parts := strings.Split(raw, "\n")
-						dateStr := strings.TrimSpace(parts[0])
-						dateStr = strings.ReplaceAll(dateStr, "Mei", "May")
-						dateStr = strings.ReplaceAll(dateStr, "Agt", "Aug")
-						dateStr = strings.ReplaceAll(dateStr, "Okt", "Oct")
-						dateStr = strings.ReplaceAll(dateStr, "Des", "Dec")
-						loc, _ := time.LoadLocation("Asia/Jakarta")
-						if t, err := time.ParseInLocation("02 Jan 2006 15:04:05", dateStr, loc); err == nil {
-							updateTime = &t
-							log.Printf("[scraper] ✅ Successfully scraped update time (alt pattern) on attempt %d", attempt+1)
-							break
-						}
-					}
+					break
 				}
 			}
-		})
+			parts := strings.Split(raw, "\n")
+			dateStr := strings.TrimSpace(parts[0])
+			dateStr = strings.ReplaceAll(dateStr, "&nbsp;", " ")
+			dateStr = strings.ReplaceAll(dateStr, "Mei", "May")
+			dateStr = strings.ReplaceAll(dateStr, "Agt", "Aug")
+			dateStr = strings.ReplaceAll(dateStr, "Okt", "Oct")
+			dateStr = strings.ReplaceAll(dateStr, "Des", "Dec")
 
-		err := c.Visit(landingURL)
-		if err != nil {
-			log.Printf("[scraper] ⚠️ Visit error on attempt %d: %v", attempt+1, err)
-			continue
-		}
-
-		// Wait for async callbacks to complete
-		c.Wait()
-
-		if updateTime != nil {
-			return updateTime, nil
-		}
-
-		if parseError != nil && attempt == maxRetries-1 {
-			return nil, parseError
+			loc, _ := time.LoadLocation("Asia/Jakarta")
+			if t, err := time.ParseInLocation("02 Jan 2006 15:04:05", dateStr, loc); err == nil {
+				log.Printf("[scraper] ✅ Successfully scraped update time using chromedp")
+				return &t, nil
+			}
 		}
 	}
 
-	if updateTime == nil {
-		return nil, fmt.Errorf("pattern 'Perubahan terakhir' not found after %d attempts", maxRetries)
-	}
-
-	return updateTime, nil
+	return nil, fmt.Errorf("pattern 'Perubahan terakhir' not found in rendered HTML")
 }
 
 // scrape mengambil data harga dari logammulia.com
