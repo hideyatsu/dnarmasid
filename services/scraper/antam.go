@@ -149,11 +149,31 @@ func (s *AntamScraper) scrapeWithChromedp(defaultDate time.Time) (time.Time, []m
 	var prices []models.GoldPrice
 	scrapedDate := defaultDate
 
-	// Use longer timeout for chromedp as Chrome startup can be slow
-	chromeTimeout := time.Duration(s.cfg.ScrapeTimeoutSeconds+30) * time.Second
+	// Use generous timeout: Chrome in Docker can be slow to start
+	chromeTimeout := time.Duration(s.cfg.ScrapeTimeoutSeconds*3+60) * time.Second
 	log.Printf("[scraper] 🔧 Chrome timeout set to: %v", chromeTimeout)
 
-	ctx, cancel := context.WithTimeout(context.Background(), chromeTimeout)
+	// Configure Chrome with proper flags for Docker environment
+	allocOpts := append(chromedp.DefaultExecAllocatorOptions[:],
+		chromedp.Flag("headless", true),
+		chromedp.Flag("no-sandbox", true),
+		chromedp.Flag("disable-dev-shm-usage", true),
+		chromedp.Flag("disable-gpu", true),
+		chromedp.Flag("disable-software-rasterizer", true),
+		chromedp.Flag("disable-extensions", true),
+		chromedp.Flag("disable-background-networking", true),
+		chromedp.Flag("disable-sync", true),
+		chromedp.Flag("disable-translate", true),
+		chromedp.Flag("no-first-run", true),
+		chromedp.Flag("disable-setuid-sandbox", true),
+		chromedp.Flag("single-process", true),
+		chromedp.UserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"),
+	)
+
+	allocCtx, allocCancel := chromedp.NewExecAllocator(context.Background(), allocOpts...)
+	defer allocCancel()
+
+	ctx, cancel := context.WithTimeout(allocCtx, chromeTimeout)
 	defer cancel()
 
 	ctx, cancel = chromedp.NewContext(ctx)
@@ -161,33 +181,47 @@ func (s *AntamScraper) scrapeWithChromedp(defaultDate time.Time) (time.Time, []m
 
 	log.Printf("[scraper] 🔍 Starting chromedp navigation to: %s", s.cfg.AntamURL)
 
-	// Add extra time for initial Chrome startup
-	initialSleep := 5 * time.Second
-	log.Printf("[scraper] ⏳ Waiting %v for Chrome startup...", initialSleep)
-	time.Sleep(initialSleep)
-
 	// Array untuk menyimpan data dari chromedp
 	var htmlContent string
 	var pageTitle string
 
-	// First try a simple connectivity check
-	log.Printf("[scraper] 🔍 Navigating to page...")
-	navStart := time.Now()
-	err := chromedp.Run(ctx,
-		chromedp.Navigate(s.cfg.AntamURL),
-		chromedp.Sleep(3*time.Second), // Wait for JS to render
-		chromedp.OuterHTML("html", &htmlContent, chromedp.ByQuery),
-		chromedp.Text("h2.ngc-title", &pageTitle, chromedp.ByQuery),
-	)
-	navDuration := time.Since(navStart)
-	log.Printf("[scraper] 🔍 Navigation took: %v", navDuration)
+	// Navigate with retry logic
+	var err error
+	maxRetries := 2
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		if attempt > 0 {
+			log.Printf("[scraper] 🔄 Retry attempt %d/%d...", attempt, maxRetries)
+			time.Sleep(3 * time.Second)
+		}
+
+		log.Printf("[scraper] 🔍 Navigating to page (attempt %d)...", attempt+1)
+		navStart := time.Now()
+		err = chromedp.Run(ctx,
+			chromedp.Navigate(s.cfg.AntamURL),
+			chromedp.WaitReady("body", chromedp.ByQuery),
+			chromedp.Sleep(5*time.Second), // Wait for JS to render
+			chromedp.OuterHTML("html", &htmlContent, chromedp.ByQuery),
+		)
+		navDuration := time.Since(navStart)
+		log.Printf("[scraper] 🔍 Navigation took: %v", navDuration)
+
+		if err == nil {
+			break
+		}
+		log.Printf("[scraper] ⚠️ Attempt %d failed: %v", attempt+1, err)
+	}
 
 	if err != nil {
-		log.Printf("[scraper] ❌ chromedp error details: %v (timeout was: %ds)", err, s.cfg.ScrapeTimeoutSeconds)
-		return scrapedDate, nil, fmt.Errorf("chromedp navigation failed after %v: %w", navDuration, err)
+		log.Printf("[scraper] ❌ chromedp error after all attempts: %v", err)
+		return scrapedDate, nil, fmt.Errorf("chromedp navigation failed: %w", err)
 	}
 
 	log.Printf("[scraper] ✅ Navigation successful, HTML length: %d chars", len(htmlContent))
+
+	// Try to get page title separately (don't fail if not found)
+	_ = chromedp.Run(ctx,
+		chromedp.Text("h2.ngc-title", &pageTitle, chromedp.ByQuery),
+	)
 
 	// Parse date dari title: "Harga Emas Hari Ini, 26 Apr 2026"
 	pageTitle = strings.TrimSpace(pageTitle)
