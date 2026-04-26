@@ -33,7 +33,7 @@ func main() {
 	log.Printf("[telegram-bot] ✅ Authorized as @%s", bot.Self.UserName)
 
 	broadcaster := NewBroadcaster(cfg, database, bot)
-	handler := NewCommandHandler(cfg, database, bot)
+	handler := NewCommandHandler(cfg, database, bot, q)
 
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
@@ -111,6 +111,29 @@ func main() {
 				log.Printf("[telegram-bot] 📥 gold.scraped received: date=%s", event.Date)
 				if err := broadcaster.SendScrapeNotification(&event); err != nil {
 					log.Printf("[telegram-bot] ❌ SendScrapeNotification error: %v", err)
+				}
+			}
+		}
+	}()
+
+	// ─── Goroutine 5: Consume scrape.failed → kirim alert ke admin
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		log.Println("[telegram-bot] 📡 Listening scrape.failed queue...")
+		for {
+			select {
+			case <-quit:
+				return
+			default:
+				var event models.ScrapeFailedEvent
+				err := q.ConsumeJSON(queue.KeyScrapeFailed, 5*time.Second, &event)
+				if err != nil {
+					continue
+				}
+				log.Printf("[telegram-bot] 📥 scrape.failed received: date=%s", event.Date)
+				if err := broadcaster.SendScrapeFailureNotification(&event); err != nil {
+					log.Printf("[telegram-bot] ❌ SendScrapeFailureNotification error: %v", err)
 				}
 			}
 		}

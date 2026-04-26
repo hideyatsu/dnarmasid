@@ -53,6 +53,16 @@ func main() {
 			event, err := scraper.Run(forceDummy)
 			if err != nil {
 				log.Printf("[scraper] ❌ Scrape failed: %v", err)
+
+				// Publish failure event to telegram-bot
+				failEvent := models.ScrapeFailedEvent{
+					Date:    time.Now().Format("2006-01-02"),
+					Source:  "Antam",
+					Message: err.Error(),
+				}
+				if pubErr := q.Publish(queue.KeyScrapeFailed, failEvent); pubErr != nil {
+					log.Printf("[scraper] ❌ Failed to publish failure event: %v", pubErr)
+				}
 				continue
 			}
 

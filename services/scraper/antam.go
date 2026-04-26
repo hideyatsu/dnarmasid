@@ -154,7 +154,7 @@ func (s *AntamScraper) scrapeUpdateTime() (*time.Time, error) {
 	var updateTime *time.Time
 
 	c := colly.NewCollector(
-		colly.UserAgent("Mozilla/5.0 (compatible; DnarMasID-Bot/1.0)"),
+		colly.UserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"),
 	)
 	c.SetRequestTimeout(time.Duration(s.cfg.ScrapeTimeoutSeconds) * time.Second)
 
@@ -210,7 +210,7 @@ func (s *AntamScraper) scrape(defaultDate time.Time) (time.Time, []models.GoldPr
 	scrapedDate := defaultDate
 
 	c := colly.NewCollector(
-		colly.UserAgent("Mozilla/5.0 (compatible; DnarMasID-Bot/1.0)"),
+		colly.UserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"),
 	)
 
 	c.SetRequestTimeout(time.Duration(s.cfg.ScrapeTimeoutSeconds) * time.Second)
