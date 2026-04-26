@@ -9,6 +9,7 @@ import (
 
 	"dnarmasid/shared/config"
 	"dnarmasid/shared/models"
+	"html"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"gorm.io/gorm"
@@ -263,7 +264,7 @@ func (b *Broadcaster) SendScrapeFailureNotification(event *models.ScrapeFailedEv
 			"🔍 Sumber: %s\n"+
 			"❌ Error: <code>%s</code>\n\n"+
 			"Sistem akan mencoba kembali pada jadwal berikutnya.",
-		event.Date, event.Source, event.Message,
+		event.Date, event.Source, html.EscapeString(event.Message),
 	)
 
 	b.sendHTML(chatID, threadID, msgText)
