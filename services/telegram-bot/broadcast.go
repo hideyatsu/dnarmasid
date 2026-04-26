@@ -247,3 +247,27 @@ func (b *Broadcaster) SendScrapeNotification(event *models.GoldScrapedEvent) err
 
 	return nil
 }
+
+// SendScrapeFailureNotification mengirim notifikasi kegagalan scraping
+func (b *Broadcaster) SendScrapeFailureNotification(event *models.ScrapeFailedEvent) error {
+	if b.cfg.TelegramGroupID == 0 {
+		return fmt.Errorf("TELEGRAM_GROUP_ID belum dikonfigurasi")
+	}
+
+	chatID := b.cfg.TelegramGroupID
+	threadID := b.cfg.TelegramThreadGeneralID
+
+	msgText := fmt.Sprintf(
+		"⚠️ <b>Gagal Mengambil Data Harga Emas</b>\n\n"+
+			"📅 Tanggal: %s\n"+
+			"🔍 Sumber: %s\n"+
+			"❌ Error: <code>%s</code>\n\n"+
+			"Sistem akan mencoba kembali pada jadwal berikutnya.",
+		event.Date, event.Source, event.Message,
+	)
+
+	b.sendHTML(chatID, threadID, msgText)
+	log.Printf("[broadcaster] ⚠️ Sent scrape failure notification to chat %d (thread %d)", chatID, threadID)
+
+	return nil
+}

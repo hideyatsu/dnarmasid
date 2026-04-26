@@ -32,6 +32,13 @@ type GoldScrapedEvent struct {
 	BuybackTrend     string       `json:"buyback_trend"`
 }
 
+// ScrapeFailedEvent — payload Redis: scraper → telegram-bot (saat gagal)
+type ScrapeFailedEvent struct {
+	Date    string `json:"date"`
+	Source  string `json:"source"`
+	Message string `json:"message"`
+}
+
 // ─────────────────────────────────────────
 // GeneratedContent — hasil AI generator
 // ─────────────────────────────────────────

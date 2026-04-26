@@ -21,6 +21,7 @@ const (
 	KeyGoldScrapedBot     = "gold.scraped.telegram"   // scraper → telegram-bot
 	KeyContentReady       = "content.ready"           // ai-generator → telegram-bot
 	KeyMediaReady         = "media.ready"             // media-generator → telegram-bot
+	KeyScrapeFailed       = "scrape.failed"           // scraper → telegram-bot
 )
 
 type Client struct {
