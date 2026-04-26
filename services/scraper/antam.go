@@ -36,16 +36,8 @@ func (s *AntamScraper) Run(forceDummy bool) (*models.GoldScrapedEvent, error) {
 	loc, _ := time.LoadLocation("Asia/Jakarta")
 	today := time.Now().In(loc).Truncate(24 * time.Hour)
 
-	// 1. Ambil update time dari landing page (sebagai gate)
-	updateTime, err := s.scrapeUpdateTime()
-	if err != nil {
-		log.Printf("[scraper] ⚠️ Gagal mengambil update time: %v. Lanjut tanpa gate.", err)
-	} else {
-		log.Printf("[scraper] 🕐 Website update-time: %v", updateTime.Format("2006-01-02 15:04:05"))
-	}
-
-	// 2. Jalankan scraping detail harga
-	parsedDate, prices, err := s.scrape(today)
+	// 1. Jalankan scraping menggunakan chromedp (bypass anti-bot)
+	parsedDate, prices, err := s.scrapeWithChromedp(today)
 	if err != nil {
 		return nil, fmt.Errorf("scrape error: %w", err)
 	}
@@ -53,10 +45,13 @@ func (s *AntamScraper) Run(forceDummy bool) (*models.GoldScrapedEvent, error) {
 		return nil, fmt.Errorf("no prices found")
 	}
 
+	// Set update time dari scraped date
+	updateTime := parsedDate
+
 	// 3. Simpan atau Update ke MySQL (Option A)
 	var didChange bool
 	for i := range prices {
-		prices[i].SourceUpdateTime = updateTime
+		prices[i].SourceUpdateTime = &updateTime
 
 		var existing models.GoldPrice
 		result := s.db.Where("date = ? AND gram = ?", parsedDate, prices[i].Gram).First(&existing)
@@ -71,7 +66,7 @@ func (s *AntamScraper) Run(forceDummy bool) (*models.GoldScrapedEvent, error) {
 		} else if result.Error == nil {
 			// Sudah ada data hari ini, cek apakah perlu update
 			isSameTime := false
-			if existing.SourceUpdateTime != nil && updateTime != nil && existing.SourceUpdateTime.Equal(*updateTime) {
+			if existing.SourceUpdateTime != nil && existing.SourceUpdateTime.Equal(updateTime) {
 				isSameTime = true
 			}
 
@@ -79,7 +74,7 @@ func (s *AntamScraper) Run(forceDummy bool) (*models.GoldScrapedEvent, error) {
 				// Ada update baru di hari yang sama (misal update sore)
 				existing.BuyPrice = prices[i].BuyPrice
 				existing.SellPrice = prices[i].SellPrice
-				existing.SourceUpdateTime = updateTime
+				existing.SourceUpdateTime = &updateTime
 				if err := s.db.Save(&existing).Error; err != nil {
 					log.Printf("[scraper] ❌ Failed to update gram %.1f: %v", prices[i].Gram, err)
 				} else {
@@ -99,14 +94,12 @@ func (s *AntamScraper) Run(forceDummy bool) (*models.GoldScrapedEvent, error) {
 	changePct, changeAmt, trend, bbChangeAmt, bbTrend := s.calcChange(parsedDate, prices)
 
 	updateTimeStr := ""
-	if updateTime != nil {
-		// Konversi kembali dari May -> Mei dsb agar enak dibaca user Indo
-		updateTimeStr = updateTime.Format("02 Jan 2006 15:04:05")
-		updateTimeStr = strings.ReplaceAll(updateTimeStr, "May", "Mei")
-		updateTimeStr = strings.ReplaceAll(updateTimeStr, "Aug", "Agt")
-		updateTimeStr = strings.ReplaceAll(updateTimeStr, "Oct", "Okt")
-		updateTimeStr = strings.ReplaceAll(updateTimeStr, "Dec", "Des")
-	}
+	// Konversi kembali dari May -> Mei dsb agar enak dibaca user Indo
+	updateTimeStr = updateTime.Format("02 Jan 2006 15:04:05")
+	updateTimeStr = strings.ReplaceAll(updateTimeStr, "May", "Mei")
+	updateTimeStr = strings.ReplaceAll(updateTimeStr, "Aug", "Agt")
+	updateTimeStr = strings.ReplaceAll(updateTimeStr, "Oct", "Okt")
+	updateTimeStr = strings.ReplaceAll(updateTimeStr, "Dec", "Des")
 
 	event := &models.GoldScrapedEvent{
 		Date:             parsedDate.Format("2006-01-02"),
@@ -151,67 +144,133 @@ func (s *AntamScraper) runDummy() (*models.GoldScrapedEvent, error) {
 	return event, nil
 }
 
-// scrapeUpdateTime menggunakan chromedp headless browser untuk bypass anti-bot
-func (s *AntamScraper) scrapeUpdateTime() (*time.Time, error) {
+// scrapeWithChromedp uses chromedp headless browser to bypass anti-bot protection
+func (s *AntamScraper) scrapeWithChromedp(defaultDate time.Time) (time.Time, []models.GoldPrice, error) {
+	var prices []models.GoldPrice
+	scrapedDate := defaultDate
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(s.cfg.ScrapeTimeoutSeconds)*time.Second)
+	defer cancel()
+
+	ctx, cancel = chromedp.NewContext(ctx)
+	defer cancel()
+
+	// Array untuk menyimpan data dari chromedp
 	var htmlContent string
-
-	// URL landing page biasanya basis dari AntamURL
-	landingURL := s.cfg.AntamURL
-	if strings.HasSuffix(landingURL, "/harga-emas-hari-ini") {
-		landingURL = strings.ReplaceAll(landingURL, "/harga-emas-hari-ini", "")
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(s.cfg.ScrapeTimeoutSeconds+10)*time.Second)
-	defer cancel()
-
-	// Create chromedp context with headless browser
-	ctx, cancel = chromedp.NewContext(ctx, chromedp.WithLogf(log.Printf))
-	defer cancel()
+	var pageTitle string
 
 	err := chromedp.Run(ctx,
-		chromedp.Navigate(landingURL),
+		chromedp.Navigate(s.cfg.AntamURL),
 		chromedp.Sleep(3*time.Second), // Wait for JS to render
 		chromedp.OuterHTML("html", &htmlContent),
+		chromedp.Text("h2.ngc-title", &pageTitle, chromedp.ByQuery),
 	)
 
 	if err != nil {
-		log.Printf("[scraper] ⚠️ chromedp navigation error: %v", err)
-		return nil, fmt.Errorf("chromedp navigation failed: %w", err)
+		return scrapedDate, nil, fmt.Errorf("chromedp navigation failed: %w", err)
 	}
 
-	// Parse the HTML content to find update time
-	patterns := []string{"Perubahan terakhir:", "Terakhir diupdate:", "Update terakhir:", "perubahan terakhir"}
-	for _, pattern := range patterns {
-		idx := strings.Index(htmlContent, pattern)
-		if idx != -1 {
-			raw := strings.TrimSpace(htmlContent[idx+len(pattern) : idx+len(pattern)+30])
-			// Clean up HTML tags
-			for strings.Contains(raw, "<") {
-				tagStart := strings.Index(raw, "<")
-				tagEnd := strings.Index(raw, ">")
-				if tagStart != -1 && tagEnd != -1 && tagEnd > tagStart {
-					raw = raw[:tagStart] + raw[tagEnd+1:]
-				} else {
-					break
+	// Parse date dari title: "Harga Emas Hari Ini, 26 Apr 2026"
+	pageTitle = strings.TrimSpace(pageTitle)
+	parts := strings.Split(pageTitle, ",")
+	if len(parts) > 1 {
+		dateStr := strings.TrimSpace(parts[1])
+		dateStr = strings.ReplaceAll(dateStr, "Mei", "May")
+		dateStr = strings.ReplaceAll(dateStr, "Agt", "Aug")
+		dateStr = strings.ReplaceAll(dateStr, "Okt", "Oct")
+		dateStr = strings.ReplaceAll(dateStr, "Des", "Dec")
+
+		loc, _ := time.LoadLocation("Asia/Jakarta")
+		if t, err := time.ParseInLocation("02 Jan 2006", dateStr, loc); err == nil {
+			scrapedDate = t
+			log.Printf("[scraper] ✅ Parsed date from title: %s", scrapedDate.Format("2006-01-02"))
+		}
+	}
+
+	// Parse prices dari HTML content
+	// Format: <tr><td>0.5 gr</td><td style="text-align:right;">1,462,500</td>...
+	isEmasBatangan := false
+
+	// Parse section headers
+	if strings.Contains(htmlContent, ">Emas Batangan<") && !strings.Contains(htmlContent, ">Emas Batangan Gift Series<") {
+		isEmasBatangan = true
+	}
+
+	// Split by table rows
+	rows := strings.Split(htmlContent, "<tr>")
+	for _, row := range rows {
+		// Check if this is a section header (th with colspan)
+		if strings.Contains(row, "th colspan") || strings.Contains(row, "<th>") {
+			thMatch := strings.Index(row, "<th")
+			if thMatch != -1 {
+				// Find closing </th>
+				thEnd := strings.Index(row[thMatch:], "</th>")
+				if thEnd != -1 {
+					thContent := row[thMatch : thMatch+thEnd]
+					// Remove HTML tags
+					thText := strings.ReplaceAll(thContent, "<th", "")
+					thText = strings.ReplaceAll(thText, ">", "")
+					thText = strings.ReplaceAll(thText, "</th", "")
+					thText = strings.TrimSpace(thText)
+
+					if thText == "Emas Batangan" {
+						isEmasBatangan = true
+					} else if strings.Contains(thText, "Gift Series") || strings.Contains(thText, "Selamat") ||
+						strings.Contains(thText, "Imlek") || strings.Contains(thText, "Batik") ||
+						strings.Contains(thText, "Perak") {
+						isEmasBatangan = false
+					}
 				}
 			}
-			parts := strings.Split(raw, "\n")
-			dateStr := strings.TrimSpace(parts[0])
-			dateStr = strings.ReplaceAll(dateStr, "&nbsp;", " ")
-			dateStr = strings.ReplaceAll(dateStr, "Mei", "May")
-			dateStr = strings.ReplaceAll(dateStr, "Agt", "Aug")
-			dateStr = strings.ReplaceAll(dateStr, "Okt", "Oct")
-			dateStr = strings.ReplaceAll(dateStr, "Des", "Dec")
+		}
 
-			loc, _ := time.LoadLocation("Asia/Jakarta")
-			if t, err := time.ParseInLocation("02 Jan 2006 15:04:05", dateStr, loc); err == nil {
-				log.Printf("[scraper] ✅ Successfully scraped update time using chromedp")
-				return &t, nil
+		if !isEmasBatangan {
+			continue
+		}
+
+		// Parse td cells
+		tdCount := strings.Count(row, "<td")
+		if tdCount < 2 {
+			continue
+		}
+
+		// Extract td contents
+		var cols []string
+		tdMatches := strings.Split(row, "<td")
+		for i := 1; i < len(tdMatches); i++ {
+			tdContent := tdMatches[i]
+			// Find closing </td>
+			tdEnd := strings.Index(tdContent, "</td>")
+			if tdEnd == -1 {
+				tdEnd = strings.Index(tdContent, "</tr>")
+			}
+			if tdEnd != -1 {
+				cellText := strings.TrimSpace(tdContent[:tdEnd])
+				cellText = strings.ReplaceAll(cellText, "style=\"text-align:right;\"", "")
+				cellText = strings.ReplaceAll(cellText, ">", "")
+				cellText = strings.TrimSpace(cellText)
+				cols = append(cols, cellText)
+			}
+		}
+
+		if len(cols) >= 2 {
+			gram := parseGram(cols[0])
+			buyPrice := parsePrice(cols[1])
+
+			if gram > 0 && buyPrice > 0 {
+				prices = append(prices, models.GoldPrice{
+					Date:      scrapedDate,
+					Gram:      gram,
+					BuyPrice:  buyPrice,
+					SellPrice: 0,
+					SourceURL: s.cfg.AntamURL,
+				})
 			}
 		}
 	}
 
-	return nil, fmt.Errorf("pattern 'Perubahan terakhir' not found in rendered HTML")
+	log.Printf("[scraper] ✅ Extracted %d price entries via chromedp", len(prices))
+	return scrapedDate, prices, nil
 }
 
 // scrape mengambil data harga dari logammulia.com
