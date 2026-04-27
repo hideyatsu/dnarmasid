@@ -280,21 +280,31 @@ func (s *AntamScraper) scrapeWithChromedp(defaultDate time.Time) (time.Time, []m
 	log.Printf("[scraper] ✅ Extracted %d price entries (1g only)", len(prices))
 
 	// 7. Get Buyback Price
-	log.Printf("[scraper] 🔍 Navigating to buyback page for detailed data...")
+	log.Printf("[scraper] 🔍 Navigating to buyback page for detailed data (fresh context)...")
 	var buybackPriceStr string
 	var buybackBuf []byte
-	err = chromedp.Run(ctx,
+
+	// Gunakan context baru khusus untuk buyback agar tidak kena deadline dari navigasi sebelumnya
+	bbCtx, bbCancel := chromedp.NewContext(allocCtx)
+	defer bbCancel()
+
+	// Timeout 2 menit khusus untuk buyback
+	bbCtx, bbCancel = context.WithTimeout(bbCtx, 2*time.Minute)
+	defer bbCancel()
+
+	err = chromedp.Run(bbCtx,
 		chromedp.Navigate("https://www.logammulia.com/id/sell/gold"),
 		chromedp.WaitVisible("body", chromedp.ByQuery),
 		// Handle modal
 		chromedp.ActionFunc(func(ctx context.Context) error {
 			log.Printf("[scraper] ⏳ Checking for buyback page modal...")
-			timeoutCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+			timeoutCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 			defer cancel()
 			if err := chromedp.WaitVisible("button.swal-button--cancel", chromedp.ByQuery).Do(timeoutCtx); err == nil {
 				log.Printf("[scraper] 🖱️ Modal detected. Clicking Cancel button...")
 				return chromedp.Click("button.swal-button--cancel", chromedp.ByQuery).Do(ctx)
 			}
+			log.Printf("[scraper] ℹ️ Modal buyback tidak muncul. Lanjut...")
 			return nil
 		}),
 		chromedp.WaitVisible(".chart-info", chromedp.ByQuery),
