@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -11,6 +13,8 @@ import (
 	"dnarmasid/shared/config"
 	"dnarmasid/shared/models"
 
+	"github.com/chromedp/cdproto/browser"
+	"github.com/chromedp/cdproto/emulation"
 	"github.com/chromedp/chromedp"
 	"github.com/gocolly/colly/v2"
 	"gorm.io/gorm"
@@ -149,12 +153,19 @@ func (s *AntamScraper) scrapeWithChromedp(defaultDate time.Time) (time.Time, []m
 	var prices []models.GoldPrice
 	scrapedDate := defaultDate
 
-	// Use generous timeout: Chrome in Docker can be slow to start
-	chromeTimeout := time.Duration(s.cfg.ScrapeTimeoutSeconds*3+60) * time.Second
+	// Use even more generous timeout for interactions
+	chromeTimeout := time.Duration(s.cfg.ScrapeTimeoutSeconds*5+120) * time.Second
 	log.Printf("[scraper] 🔧 Chrome timeout set to: %v", chromeTimeout)
+
+	// Get chrome path from env or use default
+	chromePath := os.Getenv("CHROME_BIN")
+	if chromePath == "" {
+		chromePath = "/usr/bin/google-chrome"
+	}
 
 	// Configure Chrome with proper flags for Docker environment
 	allocOpts := append(chromedp.DefaultExecAllocatorOptions[:],
+		chromedp.ExecPath(chromePath),
 		chromedp.Flag("headless", true),
 		chromedp.Flag("no-sandbox", true),
 		chromedp.Flag("disable-dev-shm-usage", true),
@@ -166,7 +177,7 @@ func (s *AntamScraper) scrapeWithChromedp(defaultDate time.Time) (time.Time, []m
 		chromedp.Flag("disable-translate", true),
 		chromedp.Flag("no-first-run", true),
 		chromedp.Flag("disable-setuid-sandbox", true),
-		chromedp.Flag("single-process", true),
+		// "single-process" removed as it can cause "context canceled" in some Docker/Linux envs
 		chromedp.UserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"),
 	)
 
@@ -191,21 +202,65 @@ func (s *AntamScraper) scrapeWithChromedp(defaultDate time.Time) (time.Time, []m
 	for attempt := 0; attempt <= maxRetries; attempt++ {
 		if attempt > 0 {
 			log.Printf("[scraper] 🔄 Retry attempt %d/%d...", attempt, maxRetries)
-			time.Sleep(3 * time.Second)
+			time.Sleep(5 * time.Second)
 		}
 
-		log.Printf("[scraper] 🔍 Navigating to page (attempt %d)...", attempt+1)
+		log.Printf("[scraper] 🔍 Navigating and handling modal (attempt %d)...", attempt+1)
 		navStart := time.Now()
+
+		var buf []byte
 		err = chromedp.Run(ctx,
+			// 1. Setup Geolocation
+			browser.GrantPermissions([]browser.PermissionType{browser.PermissionTypeGeolocation}).WithOrigin(s.cfg.AntamURL),
+			emulation.SetGeolocationOverride().
+				WithLatitude(-6.2088).
+				WithLongitude(106.8456).
+				WithAccuracy(1),
+
+			// 2. Navigate
 			chromedp.Navigate(s.cfg.AntamURL),
-			chromedp.WaitReady("body", chromedp.ByQuery),
-			chromedp.Sleep(5*time.Second), // Wait for JS to render
+			chromedp.WaitVisible("body", chromedp.ByQuery),
+			chromedp.Screenshot("body", &buf, chromedp.ByQuery),
+			chromedp.ActionFunc(func(ctx context.Context) error {
+				s.saveDebugFile(fmt.Sprintf("step1_nav_attempt%d.png", attempt+1), buf)
+				return nil
+			}),
+
+			// 3. Handle Modal
+			chromedp.ActionFunc(func(ctx context.Context) error {
+				log.Printf("[scraper] ⏳ Checking for location modal...")
+				timeoutCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+				defer cancel()
+
+				err := chromedp.WaitVisible("button.swal-button--confirm", chromedp.ByQuery).Do(timeoutCtx)
+				if err == nil {
+					log.Printf("[scraper] 🖱️ Modal detected. Clicking OK button...")
+					_ = chromedp.Screenshot("body", &buf, chromedp.ByQuery).Do(ctx)
+					s.saveDebugFile(fmt.Sprintf("step2_modal_detected_attempt%d.png", attempt+1), buf)
+
+					return chromedp.Click("button.swal-button--confirm", chromedp.ByQuery).Do(ctx)
+				}
+				log.Printf("[scraper] ℹ️ Modal not found or already dismissed (%v). Proceeding...", err)
+				return nil
+			}),
+
+			// 4. Wait for the price table
+			chromedp.WaitVisible("table.table-bordered", chromedp.ByQuery),
+			chromedp.Screenshot("body", &buf, chromedp.ByQuery),
+			chromedp.ActionFunc(func(ctx context.Context) error {
+				s.saveDebugFile(fmt.Sprintf("step3_table_visible_attempt%d.png", attempt+1), buf)
+				return nil
+			}),
+
+			chromedp.Sleep(3*time.Second),
 			chromedp.OuterHTML("html", &htmlContent, chromedp.ByQuery),
 		)
+
 		navDuration := time.Since(navStart)
-		log.Printf("[scraper] 🔍 Navigation took: %v", navDuration)
+		log.Printf("[scraper] 🔍 Navigation & interaction took: %v", navDuration)
 
 		if err == nil {
+			s.saveDebugFile("final_page.html", []byte(htmlContent))
 			break
 		}
 		log.Printf("[scraper] ⚠️ Attempt %d failed: %v", attempt+1, err)
@@ -241,7 +296,6 @@ func (s *AntamScraper) scrapeWithChromedp(defaultDate time.Time) (time.Time, []m
 	}
 
 	// Parse prices dari HTML content
-	// Format: <tr><td>0.5 gr</td><td style="text-align:right;">1,462,500</td>...
 	isEmasBatangan := false
 
 	// Parse section headers
@@ -260,11 +314,7 @@ func (s *AntamScraper) scrapeWithChromedp(defaultDate time.Time) (time.Time, []m
 				thEnd := strings.Index(row[thMatch:], "</th>")
 				if thEnd != -1 {
 					thContent := row[thMatch : thMatch+thEnd]
-					// Remove HTML tags
-					thText := strings.ReplaceAll(thContent, "<th", "")
-					thText = strings.ReplaceAll(thText, ">", "")
-					thText = strings.ReplaceAll(thText, "</th", "")
-					thText = strings.TrimSpace(thText)
+					thText := stripTags(thContent)
 
 					if thText == "Emas Batangan" {
 						isEmasBatangan = true
@@ -292,16 +342,14 @@ func (s *AntamScraper) scrapeWithChromedp(defaultDate time.Time) (time.Time, []m
 		tdMatches := strings.Split(row, "<td")
 		for i := 1; i < len(tdMatches); i++ {
 			tdContent := tdMatches[i]
-			// Find closing </td>
+			// Find closing </td> or </tr>
 			tdEnd := strings.Index(tdContent, "</td>")
 			if tdEnd == -1 {
 				tdEnd = strings.Index(tdContent, "</tr>")
 			}
 			if tdEnd != -1 {
-				cellText := strings.TrimSpace(tdContent[:tdEnd])
-				cellText = strings.ReplaceAll(cellText, "style=\"text-align:right;\"", "")
-				cellText = strings.ReplaceAll(cellText, ">", "")
-				cellText = strings.TrimSpace(cellText)
+				cellContent := tdContent[:tdEnd]
+				cellText := stripTags("<td" + cellContent)
 				cols = append(cols, cellText)
 			}
 		}
@@ -323,6 +371,57 @@ func (s *AntamScraper) scrapeWithChromedp(defaultDate time.Time) (time.Time, []m
 	}
 
 	log.Printf("[scraper] ✅ Extracted %d price entries via chromedp", len(prices))
+
+	// 7. Get Buyback Price — use a fresh context so we don't inherit the exhausted deadline
+	log.Printf("[scraper] 🔍 Navigating to buyback page (fresh context)...")
+	buybackCtx, buybackCancel := chromedp.NewExecAllocator(context.Background(), allocOpts...)
+	defer buybackCancel()
+
+	bbCtx, bbCancel := context.WithTimeout(buybackCtx, 90*time.Second)
+	defer bbCancel()
+
+	bbCtx, bbCancel = chromedp.NewContext(bbCtx)
+	defer bbCancel()
+
+	var buybackHTML string
+	var buybackValue string
+	err = chromedp.Run(bbCtx,
+		chromedp.Navigate("https://www.logammulia.com/id/sell/gold"),
+		chromedp.WaitVisible("body", chromedp.ByQuery),
+		// Handle modal on buyback page too
+		chromedp.ActionFunc(func(ctx context.Context) error {
+			timeoutCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+			defer cancel()
+			if err := chromedp.WaitVisible("button.swal-button--confirm", chromedp.ByQuery).Do(timeoutCtx); err == nil {
+				log.Printf("[scraper] 🖱️ Buyback modal detected. Clicking OK...")
+				return chromedp.Click("button.swal-button--confirm", chromedp.ByQuery).Do(ctx)
+			}
+			return nil
+		}),
+		chromedp.WaitVisible("input#valBasePrice", chromedp.ByQuery),
+		chromedp.Value("input#valBasePrice", &buybackValue, chromedp.ByQuery),
+		chromedp.OuterHTML("html", &buybackHTML, chromedp.ByQuery),
+	)
+
+	if err != nil {
+		log.Printf("[scraper] ⚠️ Failed to get buyback price: %v", err)
+		s.saveDebugFile("buyback_failed.html", []byte(buybackHTML))
+	} else {
+		log.Printf("[scraper] ✅ Buyback base value found: %s", buybackValue)
+		s.saveDebugFile("buyback_page.html", []byte(buybackHTML))
+
+		// Parse buyback (format: "1234567.00")
+		bbParts := strings.Split(buybackValue, ".")
+		if len(bbParts) > 0 {
+			if baseBuyback, err := strconv.ParseInt(bbParts[0], 10, 64); err == nil && baseBuyback > 0 {
+				log.Printf("[scraper] 💰 Applying buyback price: %d per gram", baseBuyback)
+				for i := range prices {
+					prices[i].SellPrice = int64(prices[i].Gram * float64(baseBuyback))
+				}
+			}
+		}
+	}
+
 	return scrapedDate, prices, nil
 }
 
@@ -512,6 +611,37 @@ func (s *AntamScraper) calcChange(today time.Time, todayPrices []models.GoldPric
 // ─────────────────────────────────────────
 // Helper functions
 // ─────────────────────────────────────────
+
+func (s *AntamScraper) saveDebugFile(filename string, data []byte) {
+	debugDir := "/tmp/scraper-debug"
+	_ = os.MkdirAll(debugDir, 0755)
+
+	path := filepath.Join(debugDir, filename)
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		log.Printf("[scraper] ❌ Failed to save debug file %s: %v", filename, err)
+	} else {
+		log.Printf("[scraper] 🛡️ Debug file saved: %s", path)
+	}
+}
+
+func stripTags(s string) string {
+	var res strings.Builder
+	inTag := false
+	for _, r := range s {
+		if r == '<' {
+			inTag = true
+			continue
+		}
+		if r == '>' {
+			inTag = false
+			continue
+		}
+		if !inTag {
+			res.WriteRune(r)
+		}
+	}
+	return strings.TrimSpace(res.String())
+}
 
 func parseGram(s string) float64 {
 	s = strings.TrimSpace(s)
