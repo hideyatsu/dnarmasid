@@ -288,31 +288,56 @@ func (s *AntamScraper) scrapeWithChromedp(defaultDate time.Time) (time.Time, []m
 	bbCtx, bbCancel := chromedp.NewContext(allocCtx)
 	defer bbCancel()
 
-	// Timeout 2 menit khusus untuk buyback
-	bbCtx, bbCancel = context.WithTimeout(bbCtx, 2*time.Minute)
+	// Timeout 5 menit khusus untuk buyback
+	bbCtx, bbCancel = context.WithTimeout(bbCtx, 5*time.Minute)
 	defer bbCancel()
 
 	err = chromedp.Run(bbCtx,
 		chromedp.Navigate("https://www.logammulia.com/id/sell/gold"),
 		chromedp.WaitVisible("body", chromedp.ByQuery),
-		// Handle modal
+		// Pengecekan dinamis untuk modal dan chart-info
 		chromedp.ActionFunc(func(ctx context.Context) error {
-			log.Printf("[scraper] ⏳ Checking for buyback page modal...")
-			timeoutCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
-			defer cancel()
-			if err := chromedp.WaitVisible("button.swal-button--cancel", chromedp.ByQuery).Do(timeoutCtx); err == nil {
-				log.Printf("[scraper] 🖱️ Modal detected. Clicking Cancel button...")
-				return chromedp.Click("button.swal-button--cancel", chromedp.ByQuery).Do(ctx)
+			log.Printf("[scraper] ⏳ Menunggu .chart-info atau modal (polling)...")
+			for i := 0; i < 30; i++ { // Polling selama 150 detik
+				var hasChart bool
+				_ = chromedp.Evaluate(`document.querySelector(".chart-info") !== null`, &hasChart).Do(ctx)
+				if hasChart {
+					log.Printf("[scraper] ✅ .chart-info terdeteksi!")
+					// Tunggu sebentar agar benar-benar visible/rendered
+					time.Sleep(2 * time.Second)
+					return nil
+				}
+
+				var hasModal bool
+				_ = chromedp.Evaluate(`document.querySelector(".swal-button--cancel") !== null`, &hasModal).Do(ctx)
+				if hasModal {
+					log.Printf("[scraper] 🖱️ Modal terdeteksi saat polling. Klik Cancel...")
+					_ = chromedp.Click(".swal-button--cancel", chromedp.ByQuery).Do(ctx)
+				} else {
+					// Cek juga tombol OK jika Cancel tidak ada
+					_ = chromedp.Evaluate(`document.querySelector(".swal-button--confirm") !== null`, &hasModal).Do(ctx)
+					if hasModal {
+						log.Printf("[scraper] 🖱️ Modal terdeteksi (tombol OK). Klik OK...")
+						_ = chromedp.Click(".swal-button--confirm", chromedp.ByQuery).Do(ctx)
+					}
+				}
+
+				time.Sleep(5 * time.Second)
 			}
-			log.Printf("[scraper] ℹ️ Modal buyback tidak muncul. Lanjut...")
-			return nil
+			return fmt.Errorf("timeout: .chart-info tidak muncul setelah 150 detik")
 		}),
 		chromedp.WaitVisible(".chart-info", chromedp.ByQuery),
 		chromedp.Screenshot(".right", &buybackBuf, chromedp.ByQuery),
 		chromedp.Value("input#valBasePrice", &buybackPriceStr, chromedp.ByQuery),
 	)
 
-	if err == nil {
+	if err != nil {
+		// Screenshot body saat gagal untuk debug
+		var failBuf []byte
+		_ = chromedp.Run(bbCtx, chromedp.Screenshot("body", &failBuf, chromedp.ByQuery))
+		s.saveDebugFile("buyback_failed_capture.png", failBuf)
+		log.Printf("[scraper] ⚠️ Failed to get buyback price: %v (screenshot saved)", err)
+	} else {
 		s.saveDebugFile("buyback_info.png", buybackBuf)
 		bbPrice := parsePrice(buybackPriceStr)
 		log.Printf("[scraper] 💰 Parsed buyback price: %d from %q", bbPrice, buybackPriceStr)
@@ -323,8 +348,6 @@ func (s *AntamScraper) scrapeWithChromedp(defaultDate time.Time) (time.Time, []m
 				}
 			}
 		}
-	} else {
-		log.Printf("[scraper] ⚠️ Failed to get buyback price: %v", err)
 	}
 
 	return scrapedDate, prices, nil
