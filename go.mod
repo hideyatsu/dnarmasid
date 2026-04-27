@@ -1,6 +1,6 @@
 module dnarmasid
 
-go 1.24.0
+go 1.22.0
 
 require (
 	github.com/go-telegram-bot-api/telegram-bot-api/v5 v5.5.1
@@ -12,7 +12,7 @@ require (
 	gorm.io/gorm v1.25.9
 )
 
-require golang.org/x/sync v0.20.0
+require golang.org/x/sync v0.8.0
 
 require (
 	github.com/PuerkitoBio/goquery v1.5.1 // indirect
