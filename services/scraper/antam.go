@@ -13,8 +13,10 @@ import (
 	"dnarmasid/shared/config"
 	"dnarmasid/shared/models"
 
+	"github.com/chromedp/cdproto/network"
 	"github.com/chromedp/chromedp"
 	"github.com/gocolly/colly/v2"
+	"golang.org/x/sync/errgroup"
 	"gorm.io/gorm"
 )
 
@@ -147,9 +149,6 @@ func (s *AntamScraper) runDummy() (*models.GoldScrapedEvent, error) {
 
 // scrapeWithChromedp uses chromedp headless browser to bypass anti-bot protection
 func (s *AntamScraper) scrapeWithChromedp(defaultDate time.Time) (time.Time, []models.GoldPrice, error) {
-	var prices []models.GoldPrice
-	scrapedDate := defaultDate
-
 	chromeTimeout := time.Duration(s.cfg.ScrapeTimeoutSeconds*5+120) * time.Second
 	log.Printf("[scraper] 🔧 Chrome timeout set to: %v", chromeTimeout)
 
@@ -177,180 +176,141 @@ func (s *AntamScraper) scrapeWithChromedp(defaultDate time.Time) (time.Time, []m
 	allocCtx, allocCancel := chromedp.NewExecAllocator(context.Background(), allocOpts...)
 	defer allocCancel()
 
-	ctx, cancel := context.WithTimeout(allocCtx, chromeTimeout)
-	defer cancel()
+	// Parallel scraping using errgroup
+	g, ctx := errgroup.WithContext(allocCtx)
 
-	ctx, cancel = chromedp.NewContext(ctx)
-	defer cancel()
+	var homeUpdateTime time.Time
+	var homeBuyPrice int64
+	var buybackSellPrice int64
 
-	log.Printf("[scraper] 🔍 Starting simplified chromedp navigation to: %s", s.cfg.AntamURL)
+	// 1. Scrape Home Page
+	g.Go(func() error {
+		hCtx, hCancel := chromedp.NewContext(ctx)
+		defer hCancel()
+		hCtx, hCancel = context.WithTimeout(hCtx, chromeTimeout)
+		defer hCancel()
 
-	var htmlContent string
-	var err error
-	maxRetries := 2
-	var lastUpdateStr string
-	var price1gStr string
-	for attempt := 0; attempt <= maxRetries; attempt++ {
-		if attempt > 0 {
-			log.Printf("[scraper] 🔄 Retry attempt %d/%d...", attempt, maxRetries)
-			time.Sleep(5 * time.Second)
-		}
-
+		var lastUpdateStr string
+		var price1gStr string
 		var buf []byte
-		err = chromedp.Run(ctx,
+
+		err := chromedp.Run(hCtx,
+			network.SetBlockedURLS([]string{"*google-analytics.com*", "*googletagmanager.com*", "*facebook.net*", "*doubleclick.net*", "*hotjar.com*"}),
 			chromedp.Navigate(s.cfg.AntamURL),
 			chromedp.WaitVisible("body", chromedp.ByQuery),
 
-			// Handle Modal (Click Cancel)
 			chromedp.ActionFunc(func(ctx context.Context) error {
-				log.Printf("[scraper] ⏳ Checking for location modal...")
-				timeoutCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
-				defer cancel()
+				for i := 0; i < 10; i++ {
+					var hasChart bool
+					_ = chromedp.Evaluate(`document.querySelector(".hero-price") !== null`, &hasChart).Do(ctx)
+					if hasChart { break }
 
-				err := chromedp.WaitVisible("button.swal-button--cancel", chromedp.ByQuery).Do(timeoutCtx)
-				if err == nil {
-					log.Printf("[scraper] 🖱️ Modal detected. Clicking Cancel button...")
-					return chromedp.Click("button.swal-button--cancel", chromedp.ByQuery).Do(ctx)
+					var hasModal bool
+					_ = chromedp.Evaluate(`document.querySelector(".swal-button--cancel") !== null`, &hasModal).Do(ctx)
+					if hasModal {
+						_ = chromedp.Click(".swal-button--cancel", chromedp.ByQuery).Do(ctx)
+					}
+					time.Sleep(3 * time.Second)
 				}
-				log.Printf("[scraper] ℹ️ Modal not found or already dismissed. Proceeding...")
 				return nil
 			}),
 
-			// Wait for hero price components
 			chromedp.WaitVisible(".hero-price", chromedp.ByQuery),
-			chromedp.WaitVisible(".child-4 p span.text", chromedp.ByQuery),
-			chromedp.WaitVisible(".child-2 .price .current", chromedp.ByQuery),
-
-			// Small screen for compact screenshot as requested
 			chromedp.EmulateViewport(400, 800),
 			chromedp.Screenshot(".hero-price", &buf, chromedp.ByQuery),
+			chromedp.Text(".child-4 p span.text", &lastUpdateStr, chromedp.ByQuery),
+			chromedp.Text(".child-2 .price .current", &price1gStr, chromedp.ByQuery),
+		)
+
+		if err != nil {
+			return fmt.Errorf("home scrape failed: %w", err)
+		}
+
+		s.saveDebugFile("hero_price.png", buf)
+		homeBuyPrice = parsePrice(price1gStr)
+
+		if strings.Contains(lastUpdateStr, "Perubahan terakhir:") {
+			timeStr := strings.TrimSpace(strings.ReplaceAll(lastUpdateStr, "Perubahan terakhir:", ""))
+			timeStr = strings.ReplaceAll(timeStr, "Mei", "May")
+			timeStr = strings.ReplaceAll(timeStr, "Agt", "Aug")
+			timeStr = strings.ReplaceAll(timeStr, "Okt", "Oct")
+			timeStr = strings.ReplaceAll(timeStr, "Des", "Dec")
+			loc, _ := time.LoadLocation("Asia/Jakarta")
+			if t, err := time.ParseInLocation("02 Jan 2006 15:04:05", timeStr, loc); err == nil {
+				homeUpdateTime = t
+			}
+		}
+		return nil
+	})
+
+	// 2. Scrape Buyback Page
+	g.Go(func() error {
+		bbCtx, bbCancel := chromedp.NewContext(ctx)
+		defer bbCancel()
+		bbCtx, bbCancel = context.WithTimeout(bbCtx, chromeTimeout)
+		defer bbCancel()
+
+		var buybackPriceStr string
+		var buf []byte
+
+		err := chromedp.Run(bbCtx,
+			network.SetBlockedURLS([]string{"*google-analytics.com*", "*googletagmanager.com*", "*facebook.net*", "*doubleclick.net*", "*hotjar.com*"}),
+			chromedp.Navigate("https://www.logammulia.com/id/sell/gold"),
+			chromedp.WaitVisible("body", chromedp.ByQuery),
+
 			chromedp.ActionFunc(func(ctx context.Context) error {
-				s.saveDebugFile(fmt.Sprintf("hero_price_attempt%d.png", attempt+1), buf)
+				for i := 0; i < 10; i++ {
+					var hasChart bool
+					_ = chromedp.Evaluate(`document.querySelector(".chart-info") !== null`, &hasChart).Do(ctx)
+					if hasChart { break }
+
+					var hasModal bool
+					_ = chromedp.Evaluate(`document.querySelector(".swal-button--cancel") !== null`, &hasModal).Do(ctx)
+					if hasModal {
+						_ = chromedp.Click(".swal-button--cancel", chromedp.ByQuery).Do(ctx)
+					}
+					time.Sleep(3 * time.Second)
+				}
 				return nil
 			}),
 
-			// Extract data
-			chromedp.Text(".child-4 p span.text", &lastUpdateStr, chromedp.ByQuery),
-			chromedp.Text(".child-2 .price .current", &price1gStr, chromedp.ByQuery),
-			chromedp.OuterHTML("html", &htmlContent, chromedp.ByQuery),
+			chromedp.WaitVisible(".chart-info", chromedp.ByQuery),
+			chromedp.Screenshot(".right", &buf, chromedp.ByQuery),
+			chromedp.Value("input#valBasePrice", &buybackPriceStr, chromedp.ByQuery),
 		)
 
-		if err == nil {
-			break
+		if err != nil {
+			// Save failed capture for debug but don't fail the whole group if possible?
+			// Actually, if buyback fails, we still want the buy price if it's a new day.
+			// But for now, let's treat it as an error.
+			var failBuf []byte
+			_ = chromedp.Run(bbCtx, chromedp.Screenshot("body", &failBuf, chromedp.ByQuery))
+			s.saveDebugFile("buyback_failed.png", failBuf)
+			return fmt.Errorf("buyback scrape failed: %w", err)
 		}
-		log.Printf("[scraper] ⚠️ Attempt %d failed: %v", attempt+1, err)
+
+		s.saveDebugFile("buyback_info.png", buf)
+		buybackSellPrice = parsePrice(buybackPriceStr)
+		return nil
+	})
+
+	if err := g.Wait(); err != nil {
+		return defaultDate, nil, err
 	}
 
-	if err != nil {
-		return scrapedDate, nil, fmt.Errorf("chromedp navigation failed: %w", err)
+	prices := []models.GoldPrice{
+		{
+			Date:             homeUpdateTime.Truncate(24 * time.Hour),
+			Gram:             1,
+			BuyPrice:         homeBuyPrice,
+			SellPrice:        buybackSellPrice,
+			SourceURL:        s.cfg.AntamURL,
+			SourceUpdateTime: &homeUpdateTime,
+		},
 	}
 
-	log.Printf("[scraper] 🔍 Raw update time string: %q", lastUpdateStr)
-	log.Printf("[scraper] 🔍 Raw price string: %q", price1gStr)
-
-	if strings.Contains(lastUpdateStr, "Perubahan terakhir:") {
-		timeStr := strings.TrimSpace(strings.ReplaceAll(lastUpdateStr, "Perubahan terakhir:", ""))
-		timeStr = strings.ReplaceAll(timeStr, "Mei", "May")
-		timeStr = strings.ReplaceAll(timeStr, "Agt", "Aug")
-		timeStr = strings.ReplaceAll(timeStr, "Okt", "Oct")
-		timeStr = strings.ReplaceAll(timeStr, "Des", "Dec")
-
-		loc, _ := time.LoadLocation("Asia/Jakarta")
-		if t, err := time.ParseInLocation("02 Jan 2006 15:04:05", timeStr, loc); err == nil {
-			scrapedDate = t
-			log.Printf("[scraper] ✅ Parsed update time: %s", scrapedDate.Format("2006-01-02 15:04:05"))
-		}
-	}
-
-	if price1gStr != "" {
-		price := parsePrice(price1gStr)
-		log.Printf("[scraper] 💰 Parsed price: %d from %q", price, price1gStr)
-		if price > 0 {
-			prices = append(prices, models.GoldPrice{
-				Date:             scrapedDate.Truncate(24 * time.Hour),
-				Gram:             1,
-				BuyPrice:         price,
-				SellPrice:        0, // Simplified: set to 0 or handled later
-				SourceURL:        s.cfg.AntamURL,
-				SourceUpdateTime: &scrapedDate,
-			})
-		}
-	}
-
-	log.Printf("[scraper] ✅ Extracted %d price entries (1g only)", len(prices))
-
-	// 7. Get Buyback Price
-	log.Printf("[scraper] 🔍 Navigating to buyback page for detailed data (fresh context)...")
-	var buybackPriceStr string
-	var buybackBuf []byte
-
-	// Gunakan context baru khusus untuk buyback agar tidak kena deadline dari navigasi sebelumnya
-	bbCtx, bbCancel := chromedp.NewContext(allocCtx)
-	defer bbCancel()
-
-	// Timeout 5 menit khusus untuk buyback
-	bbCtx, bbCancel = context.WithTimeout(bbCtx, 5*time.Minute)
-	defer bbCancel()
-
-	err = chromedp.Run(bbCtx,
-		chromedp.Navigate("https://www.logammulia.com/id/sell/gold"),
-		chromedp.WaitVisible("body", chromedp.ByQuery),
-		// Pengecekan dinamis untuk modal dan chart-info
-		chromedp.ActionFunc(func(ctx context.Context) error {
-			log.Printf("[scraper] ⏳ Menunggu .chart-info atau modal (polling)...")
-			for i := 0; i < 30; i++ { // Polling selama 150 detik
-				var hasChart bool
-				_ = chromedp.Evaluate(`document.querySelector(".chart-info") !== null`, &hasChart).Do(ctx)
-				if hasChart {
-					log.Printf("[scraper] ✅ .chart-info terdeteksi!")
-					// Tunggu sebentar agar benar-benar visible/rendered
-					time.Sleep(2 * time.Second)
-					return nil
-				}
-
-				var hasModal bool
-				_ = chromedp.Evaluate(`document.querySelector(".swal-button--cancel") !== null`, &hasModal).Do(ctx)
-				if hasModal {
-					log.Printf("[scraper] 🖱️ Modal terdeteksi saat polling. Klik Cancel...")
-					_ = chromedp.Click(".swal-button--cancel", chromedp.ByQuery).Do(ctx)
-				} else {
-					// Cek juga tombol OK jika Cancel tidak ada
-					_ = chromedp.Evaluate(`document.querySelector(".swal-button--confirm") !== null`, &hasModal).Do(ctx)
-					if hasModal {
-						log.Printf("[scraper] 🖱️ Modal terdeteksi (tombol OK). Klik OK...")
-						_ = chromedp.Click(".swal-button--confirm", chromedp.ByQuery).Do(ctx)
-					}
-				}
-
-				time.Sleep(5 * time.Second)
-			}
-			return fmt.Errorf("timeout: .chart-info tidak muncul setelah 150 detik")
-		}),
-		chromedp.WaitVisible(".chart-info", chromedp.ByQuery),
-		chromedp.Screenshot(".right", &buybackBuf, chromedp.ByQuery),
-		chromedp.Value("input#valBasePrice", &buybackPriceStr, chromedp.ByQuery),
-	)
-
-	if err != nil {
-		// Screenshot body saat gagal untuk debug
-		var failBuf []byte
-		_ = chromedp.Run(bbCtx, chromedp.Screenshot("body", &failBuf, chromedp.ByQuery))
-		s.saveDebugFile("buyback_failed_capture.png", failBuf)
-		log.Printf("[scraper] ⚠️ Failed to get buyback price: %v (screenshot saved)", err)
-	} else {
-		s.saveDebugFile("buyback_info.png", buybackBuf)
-		bbPrice := parsePrice(buybackPriceStr)
-		log.Printf("[scraper] 💰 Parsed buyback price: %d from %q", bbPrice, buybackPriceStr)
-		if bbPrice > 0 {
-			for i := range prices {
-				if prices[i].Gram == 1 {
-					prices[i].SellPrice = bbPrice
-				}
-			}
-		}
-	}
-
-	return scrapedDate, prices, nil
+	log.Printf("[scraper] ✅ Parallel scrape complete. Buy: %d, Sell: %d", homeBuyPrice, buybackSellPrice)
+	return homeUpdateTime, prices, nil
 }
 
 // scrape mengambil data harga dari logammulia.com
