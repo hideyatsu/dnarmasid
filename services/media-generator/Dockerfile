@@ -3,10 +3,11 @@ FROM golang:1.24-alpine AS builder
 WORKDIR /app
 
 COPY go.mod go.sum ./
-RUN apk add --no-cache git
+RUN apk add --no-cache git ca-certificates
 RUN go mod download
 
 COPY shared/ ./shared/
+COPY services/storage/ ./services/storage/
 COPY services/media-generator/ ./services/media-generator/
 
 RUN go mod tidy && CGO_ENABLED=0 GOOS=linux go build -o /bin/media-generator ./services/media-generator
