@@ -206,20 +206,35 @@ func (s *AntamScraper) scrapeWithChromedp(defaultDate time.Time) (time.Time, []m
 					if hasChart { break }
 
 					var hasModal bool
-					_ = chromedp.Evaluate(`document.querySelector(".swal-button--cancel") !== null`, &hasModal).Do(ctx)
+					_ = chromedp.Evaluate(`
+						(function() {
+							const btn = document.querySelector(".swal-button--cancel");
+							if (btn) {
+								btn.click();
+								return true;
+							}
+							return false;
+						})()
+					`, &hasModal).Do(ctx)
 					if hasModal {
-						_ = chromedp.Click(".swal-button--cancel", chromedp.ByQuery).Do(ctx)
+						log.Printf("[scraper] 🛡️ Home modal detected and closed")
+						time.Sleep(1 * time.Second)
 					}
-					time.Sleep(3 * time.Second)
+					time.Sleep(2 * time.Second)
 				}
 				return nil
 			}),
 
 			chromedp.WaitVisible(".hero-price", chromedp.ByQuery),
 			chromedp.EmulateViewport(400, 800),
+			chromedp.ActionFunc(func(ctx context.Context) error {
+				// Wait a bit for chart to stabilize
+				time.Sleep(1 * time.Second)
+				return nil
+			}),
 			chromedp.Screenshot(".hero-price", &buf, chromedp.ByQuery),
-			chromedp.Text(".child-4 p span.text", &lastUpdateStr, chromedp.ByQuery),
-			chromedp.Text(".child-2 .price .current", &price1gStr, chromedp.ByQuery),
+			chromedp.Evaluate(`document.querySelector(".child-4 p span.text")?.innerText || ""`, &lastUpdateStr),
+			chromedp.Evaluate(`document.querySelector(".child-2 .price .current")?.innerText || ""`, &price1gStr),
 		)
 
 		if err != nil {
@@ -265,18 +280,28 @@ func (s *AntamScraper) scrapeWithChromedp(defaultDate time.Time) (time.Time, []m
 					if hasChart { break }
 
 					var hasModal bool
-					_ = chromedp.Evaluate(`document.querySelector(".swal-button--cancel") !== null`, &hasModal).Do(ctx)
+					_ = chromedp.Evaluate(`
+						(function() {
+							const btn = document.querySelector(".swal-button--cancel");
+							if (btn) {
+								btn.click();
+								return true;
+							}
+							return false;
+						})()
+					`, &hasModal).Do(ctx)
 					if hasModal {
-						_ = chromedp.Click(".swal-button--cancel", chromedp.ByQuery).Do(ctx)
+						log.Printf("[scraper] 🛡️ Buyback modal detected and closed")
+						time.Sleep(1 * time.Second)
 					}
-					time.Sleep(3 * time.Second)
+					time.Sleep(2 * time.Second)
 				}
 				return nil
 			}),
 
 			chromedp.WaitVisible(".chart-info", chromedp.ByQuery),
 			chromedp.Screenshot(".right", &buf, chromedp.ByQuery),
-			chromedp.Value("input#valBasePrice", &buybackPriceStr, chromedp.ByQuery),
+			chromedp.Evaluate(`document.querySelector("input#valBasePrice")?.value || ""`, &buybackPriceStr),
 		)
 
 		if err != nil {
