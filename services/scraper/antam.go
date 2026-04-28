@@ -551,6 +551,8 @@ func (s *AntamScraper) saveDebugFile(filename string, data []byte) string {
 			log.Printf("[scraper] ❌ Failed to upload debug file %s to R2: %v", filename, err)
 		} else {
 			log.Printf("[scraper] ☁️ Debug file uploaded to R2: %s", url)
+			// Hapus file lokal setelah berhasil upload
+			os.Remove(path)
 			return url
 		}
 	}

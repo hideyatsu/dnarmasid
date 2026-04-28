@@ -71,12 +71,6 @@ func (b *Broadcaster) SendMedia(event *models.MediaReadyEvent) error {
 
 // sendImageFile upload dan kirim file gambar ke Telegram
 func (b *Broadcaster) sendImageFile(chatID int64, threadID int, event *models.MediaReadyEvent) error {
-	f, err := os.Open(event.FilePath)
-	if err != nil {
-		return fmt.Errorf("open image file: %w", err)
-	}
-	defer f.Close()
-
 	caption := fmt.Sprintf("<b>🖼️ Infografis Harga Emas</b>\n📅 %s\n\nSiap diposting ke Instagram, Facebook, Threads.", event.Date)
 
 	if event.PublicURL != "" || event.ScreenshotPriceURL != "" || event.ScreenshotBuybackURL != "" {
@@ -92,18 +86,39 @@ func (b *Broadcaster) sendImageFile(chatID int64, threadID int, event *models.Me
 		}
 	}
 
-	params := tgbotapi.Params{}
-	params.AddNonZero64("chat_id", chatID)
-	params.AddNonZero("message_thread_id", threadID)
-	params.AddNonEmpty("caption", caption)
-	params.AddNonEmpty("parse_mode", "HTML")
+	// Jika FilePath adalah URL, kirim langsung via URL
+	if strings.HasPrefix(event.FilePath, "http") {
+		params := tgbotapi.Params{}
+		params.AddNonZero64("chat_id", chatID)
+		params.AddNonZero("message_thread_id", threadID)
+		params.AddNonEmpty("photo", event.FilePath)
+		params.AddNonEmpty("caption", caption)
+		params.AddNonEmpty("parse_mode", "HTML")
+		_, err := b.bot.MakeRequest("sendPhoto", params)
+		if err != nil {
+			return fmt.Errorf("send photo by url: %w", err)
+		}
+	} else {
+		// Kirim via upload file lokal
+		f, err := os.Open(event.FilePath)
+		if err != nil {
+			return fmt.Errorf("open image file: %w", err)
+		}
+		defer f.Close()
 
-	_, err = b.bot.UploadFiles("sendPhoto", params, []tgbotapi.RequestFile{{
-		Name: "photo",
-		Data: tgbotapi.FileReader{Name: event.FileName, Reader: f},
-	}})
-	if err != nil {
-		return fmt.Errorf("send photo: %w", err)
+		params := tgbotapi.Params{}
+		params.AddNonZero64("chat_id", chatID)
+		params.AddNonZero("message_thread_id", threadID)
+		params.AddNonEmpty("caption", caption)
+		params.AddNonEmpty("parse_mode", "HTML")
+
+		_, err = b.bot.UploadFiles("sendPhoto", params, []tgbotapi.RequestFile{{
+			Name: "photo",
+			Data: tgbotapi.FileReader{Name: event.FileName, Reader: f},
+		}})
+		if err != nil {
+			return fmt.Errorf("send photo by upload: %w", err)
+		}
 	}
 
 	log.Printf("[broadcaster] 🖼️ Image sent to chat %d (thread %d): %s", chatID, threadID, event.FileName)
@@ -124,36 +139,53 @@ func (b *Broadcaster) sendVideoFile(chatID int64, threadID int, event *models.Me
 		return nil
 	}
 
-	f, err := os.Open(event.FilePath)
-	if err != nil {
-		return fmt.Errorf("open video file: %w", err)
-	}
-	defer f.Close()
-
 	caption := fmt.Sprintf("<b>🎬 Video/Reels Harga Emas</b>\n📅 %s\n\nSiap diposting ke TikTok, YouTube Shorts, Instagram Reels.", event.Date)
 
-	if event.ScreenshotPriceURL != "" || event.ScreenshotBuybackURL != "" {
-		caption += "\n\n<b>🔗 Download Screenshot Web:</b>"
+	if event.PublicURL != "" || event.ScreenshotPriceURL != "" || event.ScreenshotBuybackURL != "" {
+		caption += "\n\n<b>🔗 Download:</b>"
+		if event.PublicURL != "" {
+			caption += fmt.Sprintf("\n• <a href=\"%s\">Video HD</a>", event.PublicURL)
+		}
 		if event.ScreenshotPriceURL != "" {
-			caption += fmt.Sprintf("\n• <a href=\"%s\">Harga Emas</a>", event.ScreenshotPriceURL)
+			caption += fmt.Sprintf("\n• <a href=\"%s\">Screenshot Harga</a>", event.ScreenshotPriceURL)
 		}
 		if event.ScreenshotBuybackURL != "" {
-			caption += fmt.Sprintf("\n• <a href=\"%s\">Harga Buyback</a>", event.ScreenshotBuybackURL)
+			caption += fmt.Sprintf("\n• <a href=\"%s\">Screenshot Buyback</a>", event.ScreenshotBuybackURL)
 		}
 	}
 
-	params := tgbotapi.Params{}
-	params.AddNonZero64("chat_id", chatID)
-	params.AddNonZero("message_thread_id", threadID)
-	params.AddNonEmpty("caption", caption)
-	params.AddNonEmpty("parse_mode", "HTML")
+	// Jika FilePath adalah URL, kirim langsung via URL
+	if strings.HasPrefix(event.FilePath, "http") {
+		params := tgbotapi.Params{}
+		params.AddNonZero64("chat_id", chatID)
+		params.AddNonZero("message_thread_id", threadID)
+		params.AddNonEmpty("video", event.FilePath)
+		params.AddNonEmpty("caption", caption)
+		params.AddNonEmpty("parse_mode", "HTML")
+		_, err := b.bot.MakeRequest("sendVideo", params)
+		if err != nil {
+			return fmt.Errorf("send video by url: %w", err)
+		}
+	} else {
+		f, err := os.Open(event.FilePath)
+		if err != nil {
+			return fmt.Errorf("open video file: %w", err)
+		}
+		defer f.Close()
 
-	_, err = b.bot.UploadFiles("sendVideo", params, []tgbotapi.RequestFile{{
-		Name: "video",
-		Data: tgbotapi.FileReader{Name: event.FileName, Reader: f},
-	}})
-	if err != nil {
-		return fmt.Errorf("send video: %w", err)
+		params := tgbotapi.Params{}
+		params.AddNonZero64("chat_id", chatID)
+		params.AddNonZero("message_thread_id", threadID)
+		params.AddNonEmpty("caption", caption)
+		params.AddNonEmpty("parse_mode", "HTML")
+
+		_, err = b.bot.UploadFiles("sendVideo", params, []tgbotapi.RequestFile{{
+			Name: "video",
+			Data: tgbotapi.FileReader{Name: event.FileName, Reader: f},
+		}})
+		if err != nil {
+			return fmt.Errorf("send video by upload: %w", err)
+		}
 	}
 
 	log.Printf("[broadcaster] 🎬 Video sent to chat %d (thread %d): %s", chatID, threadID, event.FileName)

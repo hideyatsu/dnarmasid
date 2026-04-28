@@ -157,15 +157,23 @@ func (g *MediaGenerator) GenerateImage(event *models.GoldScrapedEvent) (*models.
 			} else {
 				log.Printf("[media-generator] ☁️ Infographic uploaded to R2: %s", url)
 				publicURL = url
+				// Hapus file lokal setelah berhasil upload
+				os.Remove(filePath)
+				log.Printf("[media-generator] 🗑️ Local file removed: %s", filePath)
 			}
 		}
 	}
 
 	// Simpan ke DB
+	finalPath := filePath
+	if publicURL != "" {
+		finalPath = publicURL
+	}
+
 	media := models.GeneratedMedia{
 		PriceID:   event.PriceID,
 		MediaType: models.MediaTypeImage,
-		FilePath:  filePath,
+		FilePath:  finalPath,
 		FileName:  fileName,
 		PublicURL: publicURL,
 		Status:    "pending",
@@ -176,7 +184,7 @@ func (g *MediaGenerator) GenerateImage(event *models.GoldScrapedEvent) (*models.
 		PriceID:   event.PriceID,
 		Date:      event.Date,
 		MediaType: models.MediaTypeImage,
-		FilePath:  filePath,
+		FilePath:  finalPath,
 		FileName:  fileName,
 		PublicURL: publicURL,
 		ScreenshotPriceURL:   event.ScreenshotPriceURL,
