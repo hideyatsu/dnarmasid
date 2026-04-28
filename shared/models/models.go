@@ -99,6 +99,7 @@ type GeneratedMedia struct {
 	MediaType MediaType `json:"media_type"`
 	FilePath  string    `json:"file_path"`
 	FileName  string    `json:"file_name"`
+	PublicURL string    `json:"public_url"`
 	Status    string    `gorm:"default:pending" json:"status"`
 	CreatedAt time.Time `json:"created_at"`
 }

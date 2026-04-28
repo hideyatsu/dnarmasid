@@ -42,6 +42,13 @@ type Config struct {
 
 	// Media
 	MediaOutputPath string
+
+	// Cloudflare R2
+	R2AccountID    string
+	R2AccessKey    string
+	R2SecretKey    string
+	R2BucketName    string
+	R2PublicDomain string
 }
 
 // Load membaca .env dan return Config
@@ -83,6 +90,12 @@ func Load() *Config {
 		ScheduleCronEvening: getEnv("SCHEDULE_CRON_EVENING", "0 18 * * *"),
 
 		MediaOutputPath: getEnv("MEDIA_OUTPUT_PATH", "/app/volumes/media"),
+
+		R2AccountID:    getEnv("R2_ACCOUNT_ID", ""),
+		R2AccessKey:    getEnv("R2_ACCESS_KEY", ""),
+		R2SecretKey:    getEnv("R2_SECRET_KEY", ""),
+		R2BucketName:    getEnv("R2_BUCKET_NAME", ""),
+		R2PublicDomain: getEnv("R2_PUBLIC_DOMAIN", ""),
 	}
 }
 

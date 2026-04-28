@@ -12,6 +12,7 @@ import (
 
 	"dnarmasid/shared/config"
 	"dnarmasid/shared/models"
+	"dnarmasid/services/storage"
 
 	"github.com/chromedp/cdproto/network"
 	"github.com/chromedp/chromedp"
@@ -21,12 +22,13 @@ import (
 )
 
 type AntamScraper struct {
-	cfg *config.Config
-	db  *gorm.DB
+	cfg     *config.Config
+	db      *gorm.DB
+	storage storage.StorageService
 }
 
-func NewAntamScraper(cfg *config.Config, db *gorm.DB) *AntamScraper {
-	return &AntamScraper{cfg: cfg, db: db}
+func NewAntamScraper(cfg *config.Config, db *gorm.DB, storage storage.StorageService) *AntamScraper {
+	return &AntamScraper{cfg: cfg, db: db, storage: storage}
 }
 
 // Run menjalankan scraping dan return GoldScrapedEvent
@@ -534,6 +536,16 @@ func (s *AntamScraper) saveDebugFile(filename string, data []byte) {
 		log.Printf("[scraper] ❌ Failed to save debug file %s: %v", filename, err)
 	} else {
 		log.Printf("[scraper] 🛡️ Debug file saved: %s", path)
+	}
+
+	// Upload to R2
+	if s.storage != nil {
+		url, err := s.storage.UploadFile(context.Background(), filename, data, "image/png")
+		if err != nil {
+			log.Printf("[scraper] ❌ Failed to upload debug file %s to R2: %v", filename, err)
+		} else {
+			log.Printf("[scraper] ☁️ Debug file uploaded to R2: %s", url)
+		}
 	}
 }
 

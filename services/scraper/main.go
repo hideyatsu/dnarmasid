@@ -23,7 +23,7 @@ func main() {
 	// Auto migrate table
 	database.AutoMigrate(&models.GoldPrice{}, &models.PipelineLog{})
 
-	scraper := NewAntamScraper(cfg, database)
+	scraper := NewAntamScraper(cfg, database, nil)
 
 	log.Println("[scraper] ✅ Ready. Waiting for job.scrape events...")
 

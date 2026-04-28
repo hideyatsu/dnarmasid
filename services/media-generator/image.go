@@ -112,6 +112,8 @@ func (g *MediaGenerator) GenerateImage(event *models.GoldScrapedEvent) (*models.
 		chromedp.Flag("no-sandbox", true),
 		chromedp.Flag("disable-setuid-sandbox", true),
 		chromedp.Flag("disable-dev-shm-usage", true),
+		chromedp.Flag("binary", "/usr/bin/chromium-browser"),
+		chromedp.Flag("extra-chromium-args", "--headless=new --disable-gpu"),
 	)
 	allocCtx, allocCancel := chromedp.NewExecAllocator(context.Background(), opts...)
 	defer allocCancel()

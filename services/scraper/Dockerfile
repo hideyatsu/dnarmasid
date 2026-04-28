@@ -7,6 +7,7 @@ RUN apk add --no-cache git
 RUN go mod download
 
 COPY shared/ ./shared/
+COPY services/storage/ ./services/storage/
 COPY services/scraper/ ./services/scraper/
 
 RUN go mod tidy && CGO_ENABLED=0 GOOS=linux go build -o /bin/scraper ./services/scraper
