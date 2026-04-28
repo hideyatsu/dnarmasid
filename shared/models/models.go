@@ -30,6 +30,8 @@ type GoldScrapedEvent struct {
 	Trend            string       `json:"trend"`       // "up" | "down" | "stable"
 	BuybackChangeAmt int64        `json:"buyback_change_amt"`
 	BuybackTrend     string       `json:"buyback_trend"`
+	ScreenshotPriceURL   string   `json:"screenshot_price_url"`
+	ScreenshotBuybackURL string   `json:"screenshot_buyback_url"`
 }
 
 // ScrapeFailedEvent — payload Redis: scraper → telegram-bot (saat gagal)
@@ -111,6 +113,9 @@ type MediaReadyEvent struct {
 	MediaType MediaType `json:"media_type"`
 	FilePath  string    `json:"file_path"`
 	FileName  string    `json:"file_name"`
+	PublicURL string    `json:"public_url"`
+	ScreenshotPriceURL   string `json:"screenshot_price_url"`
+	ScreenshotBuybackURL string `json:"screenshot_buyback_url"`
 }
 
 // ─────────────────────────────────────────

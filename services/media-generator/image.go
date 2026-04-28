@@ -11,18 +11,20 @@ import (
 
 	"dnarmasid/shared/config"
 	"dnarmasid/shared/models"
+	"dnarmasid/services/storage"
 
 	"github.com/chromedp/chromedp"
 	"gorm.io/gorm"
 )
 
 type MediaGenerator struct {
-	cfg *config.Config
-	db  *gorm.DB
+	cfg     *config.Config
+	db      *gorm.DB
+	storage *storage.R2Uploader
 }
 
-func NewMediaGenerator(cfg *config.Config, db *gorm.DB) *MediaGenerator {
-	return &MediaGenerator{cfg: cfg, db: db}
+func NewMediaGenerator(cfg *config.Config, db *gorm.DB, r2Uploader *storage.R2Uploader) *MediaGenerator {
+	return &MediaGenerator{cfg: cfg, db: db, storage: r2Uploader}
 }
 
 // GenerateImage membuat infografis harga emas memakai chromedp & HTML template
@@ -144,12 +146,28 @@ func (g *MediaGenerator) GenerateImage(event *models.GoldScrapedEvent) (*models.
 
 	log.Printf("[media-generator] 🖼️ Image saved via chromedp: %s", filePath)
 
+	// Upload ke R2 jika tersedia
+	var publicURL string
+	if g.storage != nil {
+		content, err := os.ReadFile(filePath)
+		if err == nil {
+			url, err := g.storage.UploadFile(context.Background(), fileName, content, "image/png")
+			if err != nil {
+				log.Printf("[media-generator] ❌ R2 upload failed: %v", err)
+			} else {
+				log.Printf("[media-generator] ☁️ Infographic uploaded to R2: %s", url)
+				publicURL = url
+			}
+		}
+	}
+
 	// Simpan ke DB
 	media := models.GeneratedMedia{
 		PriceID:   event.PriceID,
 		MediaType: models.MediaTypeImage,
 		FilePath:  filePath,
 		FileName:  fileName,
+		PublicURL: publicURL,
 		Status:    "pending",
 	}
 	g.db.Create(&media)
@@ -160,6 +178,9 @@ func (g *MediaGenerator) GenerateImage(event *models.GoldScrapedEvent) (*models.
 		MediaType: models.MediaTypeImage,
 		FilePath:  filePath,
 		FileName:  fileName,
+		PublicURL: publicURL,
+		ScreenshotPriceURL:   event.ScreenshotPriceURL,
+		ScreenshotBuybackURL: event.ScreenshotBuybackURL,
 	}, nil
 }
 
@@ -224,6 +245,8 @@ func (g *MediaGenerator) GenerateVideo(event *models.GoldScrapedEvent) (*models.
 		MediaType: models.MediaTypeVideo,
 		FilePath:  filePath,
 		FileName:  fileName,
+		ScreenshotPriceURL:   event.ScreenshotPriceURL,
+		ScreenshotBuybackURL: event.ScreenshotBuybackURL,
 	}, nil
 }
 func formatDate(dateStr string) string {

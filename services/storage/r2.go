@@ -5,6 +5,8 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"path/filepath"
+	"strings"
 
 	"dnarmasid/shared/config"
 
@@ -53,6 +55,19 @@ func NewR2Uploader(cfg *config.Config) (*R2Uploader, error) {
 	}, nil
 }
 
+// GetPublicURL returns the public URL for a file in the bucket
+func (r *R2Uploader) GetPublicURL(fileName string) string {
+	// Sanitize filename to prevent path traversal
+	safeName := filepath.Base(fileName)
+
+	domain := r.domain
+	domain = strings.TrimPrefix(domain, "https://")
+	domain = strings.TrimPrefix(domain, "http://")
+	domain = strings.TrimSuffix(domain, "/")
+
+	return fmt.Sprintf("https://%s/%s", domain, safeName)
+}
+
 func (r *R2Uploader) UploadFile(ctx context.Context, fileName string, content []byte, contentType string) (string, error) {
 	return r.UploadReader(ctx, fileName, bytes.NewReader(content), contentType)
 }
@@ -70,8 +85,7 @@ func (r *R2Uploader) UploadReader(ctx context.Context, fileName string, reader i
 	}
 
 	// Construct public URL
-	publicURL := fmt.Sprintf("https://%s/%s", r.domain, fileName)
-	return publicURL, nil
+	return r.GetPublicURL(fileName), nil
 }
 
 func (r *R2Uploader) DeleteFile(ctx context.Context, fileName string) error {

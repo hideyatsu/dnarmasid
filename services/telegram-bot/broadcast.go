@@ -79,6 +79,19 @@ func (b *Broadcaster) sendImageFile(chatID int64, threadID int, event *models.Me
 
 	caption := fmt.Sprintf("<b>🖼️ Infografis Harga Emas</b>\n📅 %s\n\nSiap diposting ke Instagram, Facebook, Threads.", event.Date)
 
+	if event.PublicURL != "" || event.ScreenshotPriceURL != "" || event.ScreenshotBuybackURL != "" {
+		caption += "\n\n<b>🔗 Download:</b>"
+		if event.PublicURL != "" {
+			caption += fmt.Sprintf("\n• <a href=\"%s\">Infografis HD</a>", event.PublicURL)
+		}
+		if event.ScreenshotPriceURL != "" {
+			caption += fmt.Sprintf("\n• <a href=\"%s\">Screenshot Harga</a>", event.ScreenshotPriceURL)
+		}
+		if event.ScreenshotBuybackURL != "" {
+			caption += fmt.Sprintf("\n• <a href=\"%s\">Screenshot Buyback</a>", event.ScreenshotBuybackURL)
+		}
+	}
+
 	params := tgbotapi.Params{}
 	params.AddNonZero64("chat_id", chatID)
 	params.AddNonZero("message_thread_id", threadID)
@@ -118,6 +131,16 @@ func (b *Broadcaster) sendVideoFile(chatID int64, threadID int, event *models.Me
 	defer f.Close()
 
 	caption := fmt.Sprintf("<b>🎬 Video/Reels Harga Emas</b>\n📅 %s\n\nSiap diposting ke TikTok, YouTube Shorts, Instagram Reels.", event.Date)
+
+	if event.ScreenshotPriceURL != "" || event.ScreenshotBuybackURL != "" {
+		caption += "\n\n<b>🔗 Download Screenshot Web:</b>"
+		if event.ScreenshotPriceURL != "" {
+			caption += fmt.Sprintf("\n• <a href=\"%s\">Harga Emas</a>", event.ScreenshotPriceURL)
+		}
+		if event.ScreenshotBuybackURL != "" {
+			caption += fmt.Sprintf("\n• <a href=\"%s\">Harga Buyback</a>", event.ScreenshotBuybackURL)
+		}
+	}
 
 	params := tgbotapi.Params{}
 	params.AddNonZero64("chat_id", chatID)

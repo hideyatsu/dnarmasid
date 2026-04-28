@@ -43,7 +43,7 @@ func (s *AntamScraper) Run(forceDummy bool) (*models.GoldScrapedEvent, error) {
 	today := time.Now().In(loc).Truncate(24 * time.Hour)
 
 	// 1. Jalankan scraping menggunakan chromedp (bypass anti-bot)
-	updateTime, prices, err := s.scrapeWithChromedp(today)
+	updateTime, prices, screenshotPrice, screenshotBuyback, err := s.scrapeWithChromedp(today)
 	if err != nil {
 		return nil, fmt.Errorf("scrape error: %w", err)
 	}
@@ -116,6 +116,8 @@ func (s *AntamScraper) Run(forceDummy bool) (*models.GoldScrapedEvent, error) {
 		Trend:            trend,
 		BuybackChangeAmt: bbChangeAmt,
 		BuybackTrend:     bbTrend,
+		ScreenshotPriceURL:   screenshotPrice,
+		ScreenshotBuybackURL: screenshotBuyback,
 	}
 
 	return event, nil
@@ -144,13 +146,15 @@ func (s *AntamScraper) runDummy() (*models.GoldScrapedEvent, error) {
 		Trend:            "down",
 		BuybackChangeAmt: 0,
 		BuybackTrend:     "stable",
+		ScreenshotPriceURL:   "https://r2.dnarmas.id/dummy_price.png",
+		ScreenshotBuybackURL: "https://r2.dnarmas.id/dummy_buyback.png",
 	}
 
 	return event, nil
 }
 
 // scrapeWithChromedp uses chromedp headless browser to bypass anti-bot protection
-func (s *AntamScraper) scrapeWithChromedp(defaultDate time.Time) (time.Time, []models.GoldPrice, error) {
+func (s *AntamScraper) scrapeWithChromedp(defaultDate time.Time) (time.Time, []models.GoldPrice, string, string, error) {
 	chromeTimeout := time.Duration(s.cfg.ScrapeTimeoutSeconds*5+120) * time.Second
 	log.Printf("[scraper] 🔧 Chrome timeout set to: %v", chromeTimeout)
 
@@ -184,6 +188,8 @@ func (s *AntamScraper) scrapeWithChromedp(defaultDate time.Time) (time.Time, []m
 	var homeUpdateTime time.Time
 	var homeBuyPrice int64
 	var buybackSellPrice int64
+	var screenshotPrice string
+	var screenshotBuyback string
 
 	// 1. Scrape Home Page
 	g.Go(func() error {
@@ -243,7 +249,7 @@ func (s *AntamScraper) scrapeWithChromedp(defaultDate time.Time) (time.Time, []m
 			return fmt.Errorf("home scrape failed: %w", err)
 		}
 
-		s.saveDebugFile("hero_price.png", buf)
+		screenshotPrice = s.saveDebugFile("hero_price.png", buf)
 		homeBuyPrice = parsePrice(price1gStr)
 
 		if strings.Contains(lastUpdateStr, "Perubahan terakhir:") {
@@ -316,13 +322,13 @@ func (s *AntamScraper) scrapeWithChromedp(defaultDate time.Time) (time.Time, []m
 			return fmt.Errorf("buyback scrape failed: %w", err)
 		}
 
-		s.saveDebugFile("buyback_info.png", buf)
+		screenshotBuyback = s.saveDebugFile("buyback_info.png", buf)
 		buybackSellPrice = parsePrice(buybackPriceStr)
 		return nil
 	})
 
 	if err := g.Wait(); err != nil {
-		return defaultDate, nil, err
+		return defaultDate, nil, "", "", err
 	}
 
 	prices := []models.GoldPrice{
@@ -337,7 +343,7 @@ func (s *AntamScraper) scrapeWithChromedp(defaultDate time.Time) (time.Time, []m
 	}
 
 	log.Printf("[scraper] ✅ Parallel scrape complete. Buy: %d, Sell: %d", homeBuyPrice, buybackSellPrice)
-	return homeUpdateTime, prices, nil
+	return homeUpdateTime, prices, screenshotPrice, screenshotBuyback, nil
 }
 
 // scrape mengambil data harga dari logammulia.com
@@ -527,7 +533,7 @@ func (s *AntamScraper) calcChange(today time.Time, todayPrices []models.GoldPric
 // Helper functions
 // ─────────────────────────────────────────
 
-func (s *AntamScraper) saveDebugFile(filename string, data []byte) {
+func (s *AntamScraper) saveDebugFile(filename string, data []byte) string {
 	debugDir := "/tmp/scraper-debug"
 	_ = os.MkdirAll(debugDir, 0755)
 
@@ -545,8 +551,10 @@ func (s *AntamScraper) saveDebugFile(filename string, data []byte) {
 			log.Printf("[scraper] ❌ Failed to upload debug file %s to R2: %v", filename, err)
 		} else {
 			log.Printf("[scraper] ☁️ Debug file uploaded to R2: %s", url)
+			return url
 		}
 	}
+	return ""
 }
 
 func stripTags(s string) string {

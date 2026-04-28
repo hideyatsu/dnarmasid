@@ -11,6 +11,7 @@ import (
 	"dnarmasid/shared/db"
 	"dnarmasid/shared/models"
 	"dnarmasid/shared/queue"
+	"dnarmasid/services/storage"
 )
 
 func main() {
@@ -20,10 +21,15 @@ func main() {
 	database := db.Connect(cfg)
 	q := queue.NewClient(cfg)
 
+	r2Uploader, err := storage.NewR2Uploader(cfg)
+	if err != nil {
+		log.Printf("[scraper] ⚠️ R2 Storage not configured: %v", err)
+	}
+
 	// Auto migrate table
 	database.AutoMigrate(&models.GoldPrice{}, &models.PipelineLog{})
 
-	scraper := NewAntamScraper(cfg, database, nil)
+	scraper := NewAntamScraper(cfg, database, r2Uploader)
 
 	log.Println("[scraper] ✅ Ready. Waiting for job.scrape events...")
 
