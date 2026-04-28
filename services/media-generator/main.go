@@ -11,6 +11,7 @@ import (
 	"dnarmasid/shared/db"
 	"dnarmasid/shared/models"
 	"dnarmasid/shared/queue"
+	"dnarmasid/services/storage"
 )
 
 func main() {
@@ -20,12 +21,17 @@ func main() {
 	database := db.Connect(cfg)
 	q := queue.NewClient(cfg)
 
+	r2Uploader, err := storage.NewR2Uploader(cfg)
+	if err != nil {
+		log.Printf("[media-generator] ⚠️ R2 Storage not configured: %v", err)
+	}
+
 	database.AutoMigrate(&models.GeneratedMedia{})
 
 	// Pastikan output dir ada
 	os.MkdirAll(cfg.MediaOutputPath, 0755)
 
-	generator := NewMediaGenerator(cfg, database)
+	generator := NewMediaGenerator(cfg, database, r2Uploader)
 
 	log.Println("[media-generator] ✅ Ready. Waiting for gold.scraped events...")
 
