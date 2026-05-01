@@ -20,7 +20,7 @@ services:
 
 networks:
   dnarmasid-net:
-    external: true
+    driver: bridge
 
 volumes:
   ollama-data:
