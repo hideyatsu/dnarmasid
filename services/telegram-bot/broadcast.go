@@ -266,19 +266,29 @@ func (b *Broadcaster) SendScrapeNotification(event *models.GoldScrapedEvent) err
 	}
 
 	// Deteksi panah trend (Buy)
-	trendArrow := "▬"
-	if event.Trend == "up" {
-		trendArrow = "▲"
-	} else if event.Trend == "down" {
-		trendArrow = "▼"
+	trendArrow := "➖"
+	switch event.Trend {
+	case "up":
+		trendArrow = "📈"
+	case "naik":
+		trendArrow = "📈"
+	case "down":
+		trendArrow = "📉"
+	case "turun":
+		trendArrow = "📉"
 	}
 
 	// Deteksi panah trend (Buyback)
-	bbTrendArrow := "▬"
-	if event.BuybackTrend == "up" {
-		bbTrendArrow = "▲"
-	} else if event.BuybackTrend == "down" {
-		bbTrendArrow = "▼"
+	bbTrendArrow := "➖"
+	switch event.BuybackTrend {
+	case "up":
+		bbTrendArrow = "📈"
+	case "naik":
+		bbTrendArrow = "📈"
+	case "down":
+		bbTrendArrow = "📉"
+	case "turun":
+		bbTrendArrow = "📉"
 	}
 
 	dateFmt := event.Date
