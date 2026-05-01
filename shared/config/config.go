@@ -52,6 +52,11 @@ type Config struct {
 	R2SecretKey    string
 	R2BucketName   string
 	R2PublicDomain string
+
+	// Repliz API
+	ReplizAccessKey       string
+	ReplizSecretKey       string
+	ReplizTikTokAccountID string
 }
 
 // Load membaca .env dan return Config
@@ -102,6 +107,10 @@ func Load() *Config {
 		R2SecretKey:    getEnv("R2_SECRET_KEY", ""),
 		R2BucketName:   getEnv("R2_BUCKET_NAME", ""),
 		R2PublicDomain: getEnv("R2_PUBLIC_DOMAIN", ""),
+
+		ReplizAccessKey:       getEnv("REPLIZ_ACCESS_KEY", ""),
+		ReplizSecretKey:       getEnv("REPLIZ_SECRET_KEY", ""),
+		ReplizTikTokAccountID: getEnv("REPLIZ_TIKTOK_ACCOUNT_ID", ""),
 	}
 }
 

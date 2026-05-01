@@ -108,15 +108,15 @@ Harga Emas Antam Hari Ini
 Tanggal: [Date]
 Harga: [Price + Trend]
 Buyback: [Buyback + Trend]
-
 Spread: [Spread]
+
 Trend: [Provide a brief Indonesian market trend summary]
 
 [Provide 2-3 sentences of INSIGHT/ANALYSIS in INDONESIAN about whether it is a good time to buy/sell based on the data above]
 
 [Create a creative and persuasive Call to Action in INDONESIAN, encouraging users to use our Telegram bot for real-time updates and price alerts by clicking the link in bio]
 
-[Add 10-15 relevant hashtags in Indonesian/English]
+[Add maximum 5 relevant hashtags in Indonesian]
 
 Tone: Professional, persuasive, and easy to understand.`,
 		event.Date,
@@ -139,7 +139,7 @@ Harga emas hari ini menunjukkan pergerakan %s. Pantau terus untuk mendapatkan ha
 Butuh update harga real-time?
 Klik link di bio untuk menggunakan bot kami dan pasang Alert Harga agar tidak ketinggalan momentum pasar.
 
-#HargaEmas #Antam #DnarMasID`,
+#HargaEmas #Antam #DnarMasID #AntamLogamMulia #HargaEmasHariIni`,
 		event.Date, formatRupiah(p1g.BuyPrice), formatChange(event.ChangeAmt, event.ChangePct, event.Trend),
 		formatRupiah(p1g.SellPrice), formatRupiah(spread), pct, event.Trend, event.Trend)
 }
@@ -305,10 +305,14 @@ func formatChange(amt int64, pct float64, trend string) string {
 }
 
 func trendEmoji(trend string) string {
-	switch trend {
+	switch strings.ToLower(trend) {
 	case "up":
 		return "▲"
+	case "naik":
+		return "▲"
 	case "down":
+		return "▼"
+	case "turun":
 		return "▼"
 	default:
 		return "▬"

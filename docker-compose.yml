@@ -137,6 +137,19 @@ services:
     networks:
       - dnarmasid-net
 
+  repliz-uploader:
+    build:
+      context: .
+      dockerfile: services/repliz-uploader/Dockerfile
+    container_name: dnarmasid-repliz-uploader
+    restart: unless-stopped
+    env_file: .env
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - dnarmasid-net
+
 networks:
   dnarmasid-net:
     driver: bridge

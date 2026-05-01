@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -37,6 +38,11 @@ func abs(x int64) int64 {
 }
 
 func formatDate(dateStr string) string {
+	// Jika sudah ada spasi, kemungkinan sudah diformat di scraper (e.g. "04 April 2026")
+	if strings.Contains(dateStr, " ") {
+		return dateStr
+	}
+
 	t, err := time.Parse("2006-01-02", dateStr)
 	if err != nil {
 		return dateStr
@@ -50,7 +56,7 @@ func formatDate(dateStr string) string {
 		time.May:       "Mei",
 		time.June:      "Jun",
 		time.July:      "Jul",
-		time.August:    "Agu",
+		time.August:    "Agt",
 		time.September: "Sep",
 		time.October:   "Okt",
 		time.November:  "Nov",

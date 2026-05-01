@@ -12,6 +12,7 @@ import (
 	"dnarmasid/shared/config"
 	"dnarmasid/shared/models"
 	"dnarmasid/services/storage"
+	"dnarmasid/shared/utils"
 
 	"github.com/chromedp/chromedp"
 	"gorm.io/gorm"
@@ -106,7 +107,7 @@ func (g *MediaGenerator) GenerateImage(event *models.GoldScrapedEvent) (*models.
 	absHtmlPath, _ := filepath.Abs(tempHtmlPath)
 	fileURL := "file://" + absHtmlPath
 
-	fileName := fmt.Sprintf("gold_%s.png", event.Date)
+	fileName := fmt.Sprintf("gold_%s.jpeg", event.Date)
 	filePath := filepath.Join(g.cfg.MediaOutputPath, fileName)
 
 	// Setup ExecAllocator untuk menginzinkan flag sandboxing no-sandbox saat di Docker (Alpine linux + Root)
@@ -140,8 +141,13 @@ func (g *MediaGenerator) GenerateImage(event *models.GoldScrapedEvent) (*models.
 		return nil, fmt.Errorf("chromedp capture error: %w", err)
 	}
 
-	if err := os.WriteFile(filePath, buf, 0644); err != nil {
-		return nil, fmt.Errorf("failed exporting png: %w", err)
+	jpegBuf, err := utils.ConvertPNGToJPEG(buf)
+	if err != nil {
+		return nil, fmt.Errorf("failed converting png to jpeg: %w", err)
+	}
+
+	if err := os.WriteFile(filePath, jpegBuf, 0644); err != nil {
+		return nil, fmt.Errorf("failed exporting jpeg: %w", err)
 	}
 
 	log.Printf("[media-generator] 🖼️ Image saved via chromedp: %s", filePath)
@@ -151,7 +157,7 @@ func (g *MediaGenerator) GenerateImage(event *models.GoldScrapedEvent) (*models.
 	if g.storage != nil {
 		content, err := os.ReadFile(filePath)
 		if err == nil {
-			url, err := g.storage.UploadFile(context.Background(), fileName, content, "image/png")
+			url, err := g.storage.UploadFile(context.Background(), fileName, content, "image/jpeg")
 			if err != nil {
 				log.Printf("[media-generator] ❌ R2 upload failed: %v", err)
 			} else {
