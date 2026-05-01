@@ -49,10 +49,21 @@ func (g *ContentGenerator) Generate(event *models.GoldScrapedEvent) (*models.Con
 	// Bangun prompt dengan data yang sudah ada
 	prompt := g.buildUnifiedPrompt(event, p1g, spreadAmt, spreadPct)
 
-	// Call Ollama
-	content, err := g.callOllama(prompt)
+	// Call AI Provider
+	var content string
+	var err error
+
+	switch g.cfg.AIProvider {
+	case "gemini":
+		content, err = g.callGemini(prompt)
+	case "ollama":
+		fallthrough
+	default:
+		content, err = g.callOllama(prompt)
+	}
+
 	if err != nil {
-		log.Printf("[ai-generator] ⚠️ AI Generation failed: %v", err)
+		log.Printf("[ai-generator] ⚠️ AI Generation failed (%s): %v", g.cfg.AIProvider, err)
 		content = g.fallbackUnifiedContent(event, p1g, spreadAmt, spreadPct)
 	}
 
@@ -172,6 +183,69 @@ func (g *ContentGenerator) callOllama(prompt string) (string, error) {
 	}
 
 	return result.Response, nil
+}
+
+// callGemini calls Google Gemini API for generating content
+func (g *ContentGenerator) callGemini(prompt string) (string, error) {
+	if g.cfg.GeminiAPIKey == "" {
+		return "", fmt.Errorf("Gemini API Key is not configured")
+	}
+
+	url := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent?key=%s",
+		g.cfg.GeminiModel, g.cfg.GeminiAPIKey)
+
+	reqBody := map[string]any{
+		"contents": []any{
+			map[string]any{
+				"parts": []any{
+					map[string]any{
+						"text": prompt,
+					},
+				},
+			},
+		},
+	}
+
+	body, _ := json.Marshal(reqBody)
+
+	req, err := http.NewRequest("POST", url, bytes.NewReader(body))
+	if err != nil {
+		return "", err
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{Timeout: 60 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("gemini api error (status %d): %s", resp.StatusCode, string(respBody))
+	}
+
+	var result struct {
+		Candidates []struct {
+			Content struct {
+				Parts []struct {
+					Text string `json:"text"`
+				} `json:"parts"`
+			} `json:"content"`
+		} `json:"candidates"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return "", fmt.Errorf("unmarshal error: %w", err)
+	}
+
+	if len(result.Candidates) == 0 || len(result.Candidates[0].Content.Parts) == 0 {
+		return "", fmt.Errorf("empty response from Gemini")
+	}
+
+	return result.Candidates[0].Content.Parts[0].Text, nil
 }
 
 // ─────────────────────────────────────────
