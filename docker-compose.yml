@@ -101,7 +101,6 @@ services:
         condition: service_healthy
     networks:
       - dnarmasid-net
-      - ollama_network
 
   media-generator:
     build:
@@ -153,8 +152,6 @@ services:
 networks:
   dnarmasid-net:
     driver: bridge
-  ollama_network:
-    external: true
 
 volumes:
   mysql-data:
