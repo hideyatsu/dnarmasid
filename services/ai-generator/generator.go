@@ -106,8 +106,8 @@ MANDATORY TEMPLATE (Must be in INDONESIAN, strictly no bold):
 Harga Emas Antam Hari Ini
 
 Tanggal: [Date]
-Harga: [Price + Trend Emoji]
-Buyback: [Buyback + Trend Emoji]
+Harga: Rp [Price] / gr ([Trend Triangle] Rp [Change Amount])
+Buyback: Rp [Buyback] / gr ([Trend Triangle] Rp [Change Amount])
 Spread: [Spread]
 
 Trend: [Provide a brief Indonesian market trend summary with emojis]
@@ -298,24 +298,20 @@ func reverse(s string) string {
 }
 
 func formatChange(amt int64, pct float64, trend string) string {
-	sign := "+"
-	if amt < 0 {
-		sign = ""
-	}
-	return fmt.Sprintf("%s %sRp %s (%s%.2f%%)", trendEmoji(trend), sign, formatRupiah(amt), sign, pct)
+	return fmt.Sprintf("%s Rp %s", trendEmoji(trend), formatRupiah(amt))
 }
 
 func trendEmoji(trend string) string {
 	switch strings.ToLower(trend) {
 	case "up":
-		return "📈"
+		return "▲"
 	case "naik":
-		return "📈"
+		return "▲"
 	case "down":
-		return "📉"
+		return "▼"
 	case "turun":
-		return "📉"
+		return "▼"
 	default:
-		return "➖"
+		return "▬"
 	}
 }
