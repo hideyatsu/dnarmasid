@@ -21,7 +21,7 @@ type GoldPrice struct {
 
 // GoldScrapedEvent — payload Redis: scraper → ai-generator & media-generator
 type GoldScrapedEvent struct {
-	Date       string       `json:"date"`        // "2026-04-04"
+	Date       string       `json:"date"`        // "04 Apr 2026"
 	UpdateTime string       `json:"update_time"` // "05 Apr 2026 07:31:00"
 	PriceID    uint         `json:"price_id"`    // ID dari gold_prices
 	Prices    []GoldPrice  `json:"prices"`      // semua gram hari ini
@@ -116,6 +116,16 @@ type MediaReadyEvent struct {
 	PublicURL string    `json:"public_url"`
 	ScreenshotPriceURL   string `json:"screenshot_price_url"`
 	ScreenshotBuybackURL string `json:"screenshot_buyback_url"`
+}
+
+// MediaGenerationCompletedEvent — payload Redis: media-generator → repliz-uploader
+type MediaGenerationCompletedEvent struct {
+	PriceID              uint   `json:"price_id"`
+	Date                 string `json:"date"`
+	Caption              string `json:"caption"` // AI generated caption
+	InfographicURL       string `json:"infographic_url"` // R2 link of the image
+	ScreenshotPriceURL   string `json:"screenshot_price_url"` // R2 link of the screenshot
+	ScreenshotBuybackURL string `json:"screenshot_buyback_url"` // R2 link of buyback screenshot
 }
 
 // ─────────────────────────────────────────

@@ -7,11 +7,11 @@ import (
 	"syscall"
 	"time"
 
+	"dnarmasid/services/storage"
 	"dnarmasid/shared/config"
 	"dnarmasid/shared/db"
 	"dnarmasid/shared/models"
 	"dnarmasid/shared/queue"
-	"dnarmasid/services/storage"
 )
 
 func main() {
@@ -61,6 +61,39 @@ func main() {
 					log.Printf("[media-generator] ❌ Failed to publish image media.ready: %v", err)
 				} else {
 					log.Printf("[media-generator] ✅ Image media.ready published: %s", imgEvent.FileName)
+
+					// Trigger Repliz Uploader Event with Polling for AI Caption
+					go func(priceID uint, date string, imgEvt *models.MediaReadyEvent) {
+						var caption string
+						// Poll for max 30 seconds (10 retries * 3s)
+						for i := 0; i < 10; i++ {
+							var content models.GeneratedContent
+							if err := database.Where("price_id = ? AND content_type = ?", priceID, models.ContentCaption).First(&content).Error; err == nil && content.ContentText != "" {
+								caption = content.ContentText
+								break
+							}
+							time.Sleep(3 * time.Second)
+						}
+
+						if caption == "" {
+							log.Printf("[media-generator] ⚠️ Could not fetch AI caption for Repliz event after polling")
+						}
+
+						replizEvent := models.MediaGenerationCompletedEvent{
+							PriceID:              priceID,
+							Date:                 date,
+							Caption:              caption,
+							InfographicURL:       imgEvt.PublicURL,
+							ScreenshotPriceURL:   imgEvt.ScreenshotPriceURL,
+							ScreenshotBuybackURL: imgEvt.ScreenshotBuybackURL,
+						}
+
+						if err := q.Publish(queue.KeyMediaGenerationCompleted, replizEvent); err != nil {
+							log.Printf("[media-generator] ❌ Failed to publish media.generation.completed: %v", err)
+						} else {
+							log.Printf("[media-generator] ✅ Repliz event published for date %s", date)
+						}
+					}(event.PriceID, event.Date, imgEvent)
 				}
 			}
 

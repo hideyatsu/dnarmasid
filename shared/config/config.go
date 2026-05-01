@@ -28,9 +28,12 @@ type Config struct {
 	TelegramThreadGeneralID int
 	TelegramThreadPostID    int
 
-	// AI (Ollama)
-	OllamaHost  string
-	OllamaModel string
+	// AI (Ollama/Gemini)
+	AIProvider   string
+	OllamaHost   string
+	OllamaModel  string
+	GeminiAPIKey string
+	GeminiModel  string
 
 	// Scraper
 	AntamURL             string
@@ -47,8 +50,13 @@ type Config struct {
 	R2AccountID    string
 	R2AccessKey    string
 	R2SecretKey    string
-	R2BucketName    string
+	R2BucketName   string
 	R2PublicDomain string
+
+	// Repliz API
+	ReplizAccessKey       string
+	ReplizSecretKey       string
+	ReplizTikTokAccountID string
 }
 
 // Load membaca .env dan return Config
@@ -80,8 +88,11 @@ func Load() *Config {
 		TelegramThreadGeneralID: threadGeneral,
 		TelegramThreadPostID:    threadPost,
 
-		OllamaHost:  getEnv("OLLAMA_HOST", "http://ollama:11434"),
-		OllamaModel: getEnv("OLLAMA_MODEL", "gemma4:31b-cloud"),
+		AIProvider:   getEnv("AI_PROVIDER", "ollama"),
+		OllamaHost:   getEnv("OLLAMA_HOST", "http://ollama:11434"),
+		OllamaModel:  getEnv("OLLAMA_MODEL", "gemma4:31b-cloud"),
+		GeminiAPIKey: getEnv("GEMINI_API_KEY", ""),
+		GeminiModel:  getEnv("GEMINI_MODEL", "gemini-3.1-flash-lite-preview"),
 
 		AntamURL:             getEnv("ANTAM_URL", "https://www.logammulia.com/id/harga-emas-hari-ini"),
 		ScrapeTimeoutSeconds: scrapeTimeout,
@@ -94,8 +105,12 @@ func Load() *Config {
 		R2AccountID:    getEnv("R2_ACCOUNT_ID", ""),
 		R2AccessKey:    getEnv("R2_ACCESS_KEY", ""),
 		R2SecretKey:    getEnv("R2_SECRET_KEY", ""),
-		R2BucketName:    getEnv("R2_BUCKET_NAME", ""),
+		R2BucketName:   getEnv("R2_BUCKET_NAME", ""),
 		R2PublicDomain: getEnv("R2_PUBLIC_DOMAIN", ""),
+
+		ReplizAccessKey:       getEnv("REPLIZ_ACCESS_KEY", ""),
+		ReplizSecretKey:       getEnv("REPLIZ_SECRET_KEY", ""),
+		ReplizTikTokAccountID: getEnv("REPLIZ_TIKTOK_ACCOUNT_ID", ""),
 	}
 }
 

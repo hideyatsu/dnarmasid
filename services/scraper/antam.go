@@ -10,9 +10,10 @@ import (
 	"strings"
 	"time"
 
+	"dnarmasid/services/storage"
 	"dnarmasid/shared/config"
 	"dnarmasid/shared/models"
-	"dnarmasid/services/storage"
+	"dnarmasid/shared/utils"
 
 	"github.com/chromedp/cdproto/network"
 	"github.com/chromedp/chromedp"
@@ -106,16 +107,22 @@ func (s *AntamScraper) Run(forceDummy bool) (*models.GoldScrapedEvent, error) {
 	updateTimeStr = strings.ReplaceAll(updateTimeStr, "Oct", "Okt")
 	updateTimeStr = strings.ReplaceAll(updateTimeStr, "Dec", "Des")
 
+	dateStr := parsedDate.Format("02 Jan 2006")
+	dateStr = strings.ReplaceAll(dateStr, "May", "Mei")
+	dateStr = strings.ReplaceAll(dateStr, "Aug", "Agt")
+	dateStr = strings.ReplaceAll(dateStr, "Oct", "Okt")
+	dateStr = strings.ReplaceAll(dateStr, "Dec", "Des")
+
 	event := &models.GoldScrapedEvent{
-		Date:             parsedDate.Format("2006-01-02"),
-		UpdateTime:       updateTimeStr,
-		PriceID:          prices[0].ID,
-		Prices:           prices,
-		ChangePct:        changePct,
-		ChangeAmt:        changeAmt,
-		Trend:            trend,
-		BuybackChangeAmt: bbChangeAmt,
-		BuybackTrend:     bbTrend,
+		Date:                 dateStr,
+		UpdateTime:           updateTimeStr,
+		PriceID:              prices[0].ID,
+		Prices:               prices,
+		ChangePct:            changePct,
+		ChangeAmt:            changeAmt,
+		Trend:                trend,
+		BuybackChangeAmt:     bbChangeAmt,
+		BuybackTrend:         bbTrend,
 		ScreenshotPriceURL:   screenshotPrice,
 		ScreenshotBuybackURL: screenshotBuyback,
 	}
@@ -135,17 +142,23 @@ func (s *AntamScraper) runDummy() (*models.GoldScrapedEvent, error) {
 		s.db.Save(&prices[i])
 	}
 
+	dateStr := today.Format("02 Jan 2006")
+	dateStr = strings.ReplaceAll(dateStr, "May", "Mei")
+	dateStr = strings.ReplaceAll(dateStr, "Aug", "Agt")
+	dateStr = strings.ReplaceAll(dateStr, "Oct", "Okt")
+	dateStr = strings.ReplaceAll(dateStr, "Dec", "Des")
+
 	// Buat event dummy
 	event := &models.GoldScrapedEvent{
-		Date:             today.Format("2006-01-02"),
-		UpdateTime:       today.Format("02 Jan 2006 10:00:00"),
-		PriceID:          prices[0].ID,
-		Prices:           prices,
-		ChangePct:        1.25,
-		ChangeAmt:        15000,
-		Trend:            "down",
-		BuybackChangeAmt: 0,
-		BuybackTrend:     "stable",
+		Date:                 dateStr,
+		UpdateTime:           today.Format("02 Jan 2006 10:00:00"),
+		PriceID:              prices[0].ID,
+		Prices:               prices,
+		ChangePct:            1.25,
+		ChangeAmt:            15000,
+		Trend:                "down",
+		BuybackChangeAmt:     0,
+		BuybackTrend:         "stable",
 		ScreenshotPriceURL:   "https://r2.dnarmas.id/dummy_price.png",
 		ScreenshotBuybackURL: "https://r2.dnarmas.id/dummy_buyback.png",
 	}
@@ -211,7 +224,9 @@ func (s *AntamScraper) scrapeWithChromedp(defaultDate time.Time) (time.Time, []m
 				for i := 0; i < 10; i++ {
 					var hasChart bool
 					_ = chromedp.Evaluate(`document.querySelector(".hero-price") !== null`, &hasChart).Do(ctx)
-					if hasChart { break }
+					if hasChart {
+						break
+					}
 
 					var hasModal bool
 					_ = chromedp.Evaluate(`
@@ -249,7 +264,13 @@ func (s *AntamScraper) scrapeWithChromedp(defaultDate time.Time) (time.Time, []m
 			return fmt.Errorf("home scrape failed: %w", err)
 		}
 
-		screenshotPrice = s.saveDebugFile("hero_price.png", buf)
+		jpegBuf, err := utils.ConvertPNGToJPEG(buf)
+		if err != nil {
+			log.Printf("[scraper] ⚠️ Failed converting hero price PNG to JPEG: %v", err)
+			jpegBuf = buf // fallback to original
+		}
+
+		screenshotPrice = s.saveDebugFile("hero_price.jpeg", jpegBuf)
 		homeBuyPrice = parsePrice(price1gStr)
 
 		if strings.Contains(lastUpdateStr, "Perubahan terakhir:") {
@@ -285,7 +306,9 @@ func (s *AntamScraper) scrapeWithChromedp(defaultDate time.Time) (time.Time, []m
 				for i := 0; i < 10; i++ {
 					var hasChart bool
 					_ = chromedp.Evaluate(`document.querySelector(".chart-info") !== null`, &hasChart).Do(ctx)
-					if hasChart { break }
+					if hasChart {
+						break
+					}
 
 					var hasModal bool
 					_ = chromedp.Evaluate(`
@@ -318,11 +341,19 @@ func (s *AntamScraper) scrapeWithChromedp(defaultDate time.Time) (time.Time, []m
 			// But for now, let's treat it as an error.
 			var failBuf []byte
 			_ = chromedp.Run(bbCtx, chromedp.Screenshot("body", &failBuf, chromedp.ByQuery))
-			s.saveDebugFile("buyback_failed.png", failBuf)
+
+			failJpeg, _ := utils.ConvertPNGToJPEG(failBuf)
+			s.saveDebugFile("buyback_failed.jpeg", failJpeg)
 			return fmt.Errorf("buyback scrape failed: %w", err)
 		}
 
-		screenshotBuyback = s.saveDebugFile("buyback_info.png", buf)
+		jpegBuf, err := utils.ConvertPNGToJPEG(buf)
+		if err != nil {
+			log.Printf("[scraper] ⚠️ Failed converting buyback PNG to JPEG: %v", err)
+			jpegBuf = buf // fallback to original
+		}
+
+		screenshotBuyback = s.saveDebugFile("buyback_info.jpeg", jpegBuf)
 		buybackSellPrice = parsePrice(buybackPriceStr)
 		return nil
 	})
@@ -546,7 +577,7 @@ func (s *AntamScraper) saveDebugFile(filename string, data []byte) string {
 
 	// Upload to R2
 	if s.storage != nil {
-		url, err := s.storage.UploadFile(context.Background(), filename, data, "image/png")
+		url, err := s.storage.UploadFile(context.Background(), filename, data, "image/jpeg")
 		if err != nil {
 			log.Printf("[scraper] ❌ Failed to upload debug file %s to R2: %v", filename, err)
 		} else {
