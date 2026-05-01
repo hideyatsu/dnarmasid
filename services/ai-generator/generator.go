@@ -49,10 +49,21 @@ func (g *ContentGenerator) Generate(event *models.GoldScrapedEvent) (*models.Con
 	// Bangun prompt dengan data yang sudah ada
 	prompt := g.buildUnifiedPrompt(event, p1g, spreadAmt, spreadPct)
 
-	// Call Ollama
-	content, err := g.callOllama(prompt)
+	// Call AI Provider
+	var content string
+	var err error
+
+	switch g.cfg.AIProvider {
+	case "gemini":
+		content, err = g.callGemini(prompt)
+	case "ollama":
+		fallthrough
+	default:
+		content, err = g.callOllama(prompt)
+	}
+
 	if err != nil {
-		log.Printf("[ai-generator] ⚠️ AI Generation failed: %v", err)
+		log.Printf("[ai-generator] ⚠️ AI Generation failed (%s): %v", g.cfg.AIProvider, err)
 		content = g.fallbackUnifiedContent(event, p1g, spreadAmt, spreadPct)
 	}
 
@@ -97,15 +108,15 @@ Harga Emas Antam Hari Ini
 Tanggal: [Date]
 Harga: [Price + Trend]
 Buyback: [Buyback + Trend]
-
 Spread: [Spread]
+
 Trend: [Provide a brief Indonesian market trend summary]
 
 [Provide 2-3 sentences of INSIGHT/ANALYSIS in INDONESIAN about whether it is a good time to buy/sell based on the data above]
 
 [Create a creative and persuasive Call to Action in INDONESIAN, encouraging users to use our Telegram bot for real-time updates and price alerts by clicking the link in bio]
 
-[Add 10-15 relevant hashtags in Indonesian/English]
+[Add maximum 5 relevant hashtags in Indonesian]
 
 Tone: Professional, persuasive, and easy to understand.`,
 		event.Date,
@@ -128,7 +139,7 @@ Harga emas hari ini menunjukkan pergerakan %s. Pantau terus untuk mendapatkan ha
 Butuh update harga real-time?
 Klik link di bio untuk menggunakan bot kami dan pasang Alert Harga agar tidak ketinggalan momentum pasar.
 
-#HargaEmas #Antam #DnarMasID`,
+#HargaEmas #Antam #DnarMasID #AntamLogamMulia #HargaEmasHariIni`,
 		event.Date, formatRupiah(p1g.BuyPrice), formatChange(event.ChangeAmt, event.ChangePct, event.Trend),
 		formatRupiah(p1g.SellPrice), formatRupiah(spread), pct, event.Trend, event.Trend)
 }
@@ -172,6 +183,69 @@ func (g *ContentGenerator) callOllama(prompt string) (string, error) {
 	}
 
 	return result.Response, nil
+}
+
+// callGemini calls Google Gemini API for generating content
+func (g *ContentGenerator) callGemini(prompt string) (string, error) {
+	if g.cfg.GeminiAPIKey == "" {
+		return "", fmt.Errorf("Gemini API Key is not configured")
+	}
+
+	url := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent?key=%s",
+		g.cfg.GeminiModel, g.cfg.GeminiAPIKey)
+
+	reqBody := map[string]any{
+		"contents": []any{
+			map[string]any{
+				"parts": []any{
+					map[string]any{
+						"text": prompt,
+					},
+				},
+			},
+		},
+	}
+
+	body, _ := json.Marshal(reqBody)
+
+	req, err := http.NewRequest("POST", url, bytes.NewReader(body))
+	if err != nil {
+		return "", err
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{Timeout: 60 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("gemini api error (status %d): %s", resp.StatusCode, string(respBody))
+	}
+
+	var result struct {
+		Candidates []struct {
+			Content struct {
+				Parts []struct {
+					Text string `json:"text"`
+				} `json:"parts"`
+			} `json:"content"`
+		} `json:"candidates"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return "", fmt.Errorf("unmarshal error: %w", err)
+	}
+
+	if len(result.Candidates) == 0 || len(result.Candidates[0].Content.Parts) == 0 {
+		return "", fmt.Errorf("empty response from Gemini")
+	}
+
+	return result.Candidates[0].Content.Parts[0].Text, nil
 }
 
 // ─────────────────────────────────────────
@@ -231,10 +305,14 @@ func formatChange(amt int64, pct float64, trend string) string {
 }
 
 func trendEmoji(trend string) string {
-	switch trend {
+	switch strings.ToLower(trend) {
 	case "up":
 		return "▲"
+	case "naik":
+		return "▲"
 	case "down":
+		return "▼"
+	case "turun":
 		return "▼"
 	default:
 		return "▬"
