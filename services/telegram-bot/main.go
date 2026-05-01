@@ -97,7 +97,7 @@ func main() {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		log.Println("[telegram-bot] 📡 Listening gold.scraped queue...")
+		log.Printf("[telegram-bot] 📡 Listening %s queue...", queue.KeyGoldScrapedBot)
 		for {
 			select {
 			case <-quit:

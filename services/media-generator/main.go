@@ -33,7 +33,7 @@ func main() {
 
 	generator := NewMediaGenerator(cfg, database, r2Uploader)
 
-	log.Println("[media-generator] ✅ Ready. Waiting for gold.scraped events...")
+	log.Printf("[media-generator] ✅ Ready. Waiting for %s events...", queue.KeyGoldScrapedMedia)
 
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)

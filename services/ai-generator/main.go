@@ -24,7 +24,7 @@ func main() {
 
 	generator := NewContentGenerator(cfg, database)
 
-	log.Println("[ai-generator] ✅ Ready. Waiting for gold.scraped events...")
+	log.Printf("[ai-generator] ✅ Ready. Waiting for %s events...", queue.KeyGoldScrapedAI)
 
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
