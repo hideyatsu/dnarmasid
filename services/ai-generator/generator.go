@@ -100,17 +100,17 @@ Date: %s
 Price: Rp %s / gr (%s Rp %s)
 Buyback: Rp %s / gr (%s Rp %s)
 Spread: Rp %s (%.2f%%)
-Trend: %s
+Trend: %s %s
 
 MANDATORY TEMPLATE (Must be in INDONESIAN, strictly no bold):
 Harga Emas Antam Hari Ini
 
 Tanggal: [Date]
-Harga: [Price + Trend]
-Buyback: [Buyback + Trend]
+Harga: [Price + Trend Emoji]
+Buyback: [Buyback + Trend Emoji]
 Spread: [Spread]
 
-Trend: [Provide a brief Indonesian market trend summary]
+Trend: [Provide a brief Indonesian market trend summary with emojis]
 
 [Provide 2-3 sentences of INSIGHT/ANALYSIS in INDONESIAN about whether it is a good time to buy/sell based on the data above]
 
@@ -122,17 +122,18 @@ Tone: Professional, persuasive, and easy to understand.`,
 		event.Date,
 		formatRupiah(p1g.BuyPrice), tEmoji, formatRupiah(event.ChangeAmt),
 		formatRupiah(p1g.SellPrice), bbTEmoji, formatRupiah(event.BuybackChangeAmt),
-		formatRupiah(spread), pct, event.Trend)
+		formatRupiah(spread), pct, event.Trend, tEmoji)
 }
 
 func (g *ContentGenerator) fallbackUnifiedContent(event *models.GoldScrapedEvent, p1g models.GoldPrice, spread int64, pct float64) string {
+	tEmoji := trendEmoji(event.Trend)
 	return fmt.Sprintf(`Harga Emas Antam Hari Ini
 
 Tanggal: %s
 Harga: Rp %s / gr (%s)
 Buyback: Rp %s / gr
 Spread: Rp %s (%.2f%%)
-Trend: %s
+Trend: %s %s
 
 Harga emas hari ini menunjukkan pergerakan %s. Pantau terus untuk mendapatkan harga terbaik.
 
@@ -141,7 +142,7 @@ Klik link di bio untuk menggunakan bot kami dan pasang Alert Harga agar tidak ke
 
 #HargaEmas #Antam #DnarMasID #AntamLogamMulia #HargaEmasHariIni`,
 		event.Date, formatRupiah(p1g.BuyPrice), formatChange(event.ChangeAmt, event.ChangePct, event.Trend),
-		formatRupiah(p1g.SellPrice), formatRupiah(spread), pct, event.Trend, event.Trend)
+		formatRupiah(p1g.SellPrice), formatRupiah(spread), pct, event.Trend, tEmoji, event.Trend)
 }
 
 // callOllama calls the local Ollama API for generating content
@@ -301,20 +302,20 @@ func formatChange(amt int64, pct float64, trend string) string {
 	if amt < 0 {
 		sign = ""
 	}
-	return fmt.Sprintf("%sRp %s (%s%.2f%%)", sign, formatRupiah(amt), sign, pct)
+	return fmt.Sprintf("%s %sRp %s (%s%.2f%%)", trendEmoji(trend), sign, formatRupiah(amt), sign, pct)
 }
 
 func trendEmoji(trend string) string {
 	switch strings.ToLower(trend) {
 	case "up":
-		return "▲"
+		return "📈"
 	case "naik":
-		return "▲"
+		return "📈"
 	case "down":
-		return "▼"
+		return "📉"
 	case "turun":
-		return "▼"
+		return "📉"
 	default:
-		return "▬"
+		return "➖"
 	}
 }
