@@ -63,7 +63,7 @@ func main() {
 					log.Printf("[media-generator] ✅ Image media.ready published: %s", imgEvent.FileName)
 
 					// Trigger Repliz Uploader Event with Polling for AI Caption
-					go func(priceID uint, date string, imgEvt *models.MediaReadyEvent) {
+					go func(priceID uint, date string, imgEvt *models.MediaReadyEvent, screenshotPriceURL string, screenshotBuybackURL string) {
 						var caption string
 						// Poll for max 30 seconds (10 retries * 3s)
 						for i := 0; i < 10; i++ {
@@ -84,8 +84,8 @@ func main() {
 							Date:                 date,
 							Caption:              caption,
 							InfographicURL:       imgEvt.PublicURL,
-							ScreenshotPriceURL:   imgEvt.ScreenshotPriceURL,
-							ScreenshotBuybackURL: imgEvt.ScreenshotBuybackURL,
+							ScreenshotPriceURL:   screenshotPriceURL,
+							ScreenshotBuybackURL: screenshotBuybackURL,
 						}
 
 						if err := q.Publish(queue.KeyMediaGenerationCompleted, replizEvent); err != nil {
@@ -93,7 +93,7 @@ func main() {
 						} else {
 							log.Printf("[media-generator] ✅ Repliz event published for date %s", date)
 						}
-					}(event.PriceID, event.Date, imgEvent)
+					}(event.PriceID, event.Date, imgEvent, event.ScreenshotPriceURL, event.ScreenshotBuybackURL)
 				}
 			}
 
