@@ -49,13 +49,14 @@ func main() {
 
 			medias := []repliz.Media{}
 
-			// Image 1: Infographic
+			// Image 1: Infographic (pertama dalam album — tidak bisa custom thumbnail)
 			if event.InfographicURL != "" {
 				medias = append(medias, repliz.Media{
-					Alt:       "Infografis Harga Emas",
-					Type:      "image",
-					Thumbnail: event.InfographicURL,
-					URL:       event.InfographicURL,
+					Alt:             "Infografis Harga Emas",
+					Type:            "image",
+					Thumbnail:       event.InfographicURL,
+					URL:             event.InfographicURL,
+					CustomThumbnail: false,
 				})
 			}
 
@@ -69,6 +70,16 @@ func main() {
 				})
 			}
 
+			// Image 3: Scrape screenshot (Buyback)
+			if event.ScreenshotBuybackURL != "" {
+				medias = append(medias, repliz.Media{
+					Alt:       "Screenshot Buyback Emas",
+					Type:      "image",
+					Thumbnail: event.ScreenshotBuybackURL,
+					URL:       event.ScreenshotBuybackURL,
+				})
+			}
+
 			// Fallback description if AI caption is missing
 			description := event.Caption
 			if description == "" {
@@ -79,7 +90,7 @@ func main() {
 				Title:       fmt.Sprintf("Update Harga Emas Antam - %s", event.Date),
 				Description: description,
 				Topic:       "antamlogammulia",
-				Type:        "image",
+				Type:        "album",
 				Medias:      medias,
 				Meta: repliz.Meta{
 					Title:       "",
@@ -91,9 +102,9 @@ func main() {
 					IsDraft:       false,
 					Collaborators: []string{},
 					Music: repliz.Music{
-						ID:        "7480295297915177744",
-						Artist:    "Media HUB",
-						Name:      "original sound - Media HUB",
+						ID:        "7637201849280711442",
+						Artist:    "DnarMasID",
+						Name:      "original sound - DnarMasID",
 						Thumbnail: "",
 					},
 				},
