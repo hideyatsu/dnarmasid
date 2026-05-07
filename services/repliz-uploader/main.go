@@ -70,15 +70,15 @@ func main() {
 				})
 			}
 
-			// Image 3: Scrape screenshot (Buyback)
-			if event.ScreenshotBuybackURL != "" {
-				medias = append(medias, repliz.Media{
-					Alt:       "Screenshot Buyback Emas",
-					Type:      "image",
-					Thumbnail: event.ScreenshotBuybackURL,
-					URL:       event.ScreenshotBuybackURL,
-				})
-			}
+			// // Image 3: Scrape screenshot (Buyback)
+			// if event.ScreenshotBuybackURL != "" {
+			// 	medias = append(medias, repliz.Media{
+			// 		Alt:       "Screenshot Buyback Emas",
+			// 		Type:      "image",
+			// 		Thumbnail: event.ScreenshotBuybackURL,
+			// 		URL:       event.ScreenshotBuybackURL,
+			// 	})
+			// }
 
 			// Fallback description if AI caption is missing
 			description := event.Caption
