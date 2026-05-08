@@ -13,10 +13,11 @@ import (
 
 // Media represents a single media item in the Repliz payload
 type Media struct {
-	Alt       string `json:"alt"`
-	Type      string `json:"type"`
-	Thumbnail string `json:"thumbnail"`
-	URL       string `json:"url"`
+	Alt             string `json:"alt"`
+	Type            string `json:"type"`
+	Thumbnail       string `json:"thumbnail"`
+	URL             string `json:"url"`
+	CustomThumbnail bool   `json:"customThumbnail,omitempty"`
 }
 
 // Meta represents metadata for the post
