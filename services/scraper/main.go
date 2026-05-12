@@ -7,11 +7,21 @@ import (
 	"syscall"
 	"time"
 
+	"dnarmasid/services/scraper/chrome"
+	"dnarmasid/services/storage"
 	"dnarmasid/shared/config"
 	"dnarmasid/shared/db"
 	"dnarmasid/shared/models"
 	"dnarmasid/shared/queue"
-	"dnarmasid/services/storage"
+	"encoding/json"
+	"net/http"
+	"sync/atomic"
+)
+
+var (
+	jobsReceived int64
+	jobsFailed   int64
+	lastJobTime  atomic.Value // holds time.Time
 )
 
 func main() {
@@ -29,7 +39,55 @@ func main() {
 	// Auto migrate table
 	database.AutoMigrate(&models.GoldPrice{}, &models.PipelineLog{})
 
-	scraper := NewAntamScraper(cfg, database, r2Uploader)
+	startTime := time.Now()
+	chromeManager := chrome.NewManager()
+
+	// Global Zombie Reaper — Reaps orphaned processes (Chrome children)
+	go func() {
+		log.Println("[scraper] 🛡️ Global Zombie Reaper started")
+		for {
+			var ws syscall.WaitStatus
+			pid, err := syscall.Wait4(-1, &ws, syscall.WNOHANG, nil)
+			if pid > 0 {
+				// Successfully reaped a child process
+			}
+			if err != nil && err == syscall.ECHILD {
+				// No child processes left to wait for
+				time.Sleep(10 * time.Second)
+				continue
+			}
+			time.Sleep(2 * time.Second)
+		}
+	}()
+
+	scraper := NewAntamScraper(cfg, database, r2Uploader, chromeManager)
+
+	// Health endpoint
+	go func() {
+		http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+			lastJob, _ := lastJobTime.Load().(time.Time)
+			status := "ok"
+
+			// If stalled for more than 30 minutes, mark as degraded (optional)
+			if !lastJob.IsZero() && time.Since(lastJob) > 30*time.Minute {
+				// status = "stalled"
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]any{
+				"status":           status,
+				"chrome_instances": chromeManager.Count(),
+				"jobs_received":    atomic.LoadInt64(&jobsReceived),
+				"jobs_failed":      atomic.LoadInt64(&jobsFailed),
+				"last_job_at":      lastJob.Format(time.RFC3339),
+				"uptime_seconds":   time.Since(startTime).Seconds(),
+			})
+		})
+		log.Println("[scraper] 🏥 Health endpoint listening on :9090")
+		if err := http.ListenAndServe(":9090", nil); err != nil {
+			log.Printf("[scraper] ❌ Health server failed: %v", err)
+		}
+	}()
 
 	log.Println("[scraper] ✅ Ready. Waiting for job.scrape events...")
 
@@ -37,11 +95,20 @@ func main() {
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 
+	lastJobTime.Store(time.Time{})
+
+	pollTicker := time.NewTicker(1 * time.Hour)
+	defer pollTicker.Stop()
+
 	for {
 		select {
 		case <-quit:
 			log.Println("[scraper] Shutting down...")
+			chromeManager.Cleanup()
 			return
+		case <-pollTicker.C:
+			log.Printf("[scraper] 💓 still polling... (jobs=%d failed=%d)",
+				atomic.LoadInt64(&jobsReceived), atomic.LoadInt64(&jobsFailed))
 		default:
 			// Blocking consume — tunggu job dari scheduler
 			var job map[string]string
@@ -51,13 +118,20 @@ func main() {
 				continue
 			}
 
+			atomic.AddInt64(&jobsReceived, 1)
+			lastJobTime.Store(time.Now())
 			log.Printf("[scraper] 📥 Job received: %v", job)
 
 			forceDummy := job["mode"] == "dummy" || job["force_dummy"] == "true"
 
 			// Jalankan scraping
 			event, err := scraper.Run(forceDummy)
+
+			// Cleanup Chrome after EVERY run to be safe
+			chromeManager.Cleanup()
+
 			if err != nil {
+				atomic.AddInt64(&jobsFailed, 1)
 				log.Printf("[scraper] ❌ Scrape failed: %v", err)
 
 				// Publish failure event to telegram-bot
