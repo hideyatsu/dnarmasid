@@ -21,7 +21,6 @@ import (
 var (
 	jobsReceived int64
 	jobsFailed   int64
-	stalls       int64
 	lastJobTime  atomic.Value // holds time.Time
 )
 
@@ -61,7 +60,6 @@ func main() {
 				"chrome_instances": chromeManager.Count(),
 				"jobs_received":    atomic.LoadInt64(&jobsReceived),
 				"jobs_failed":      atomic.LoadInt64(&jobsFailed),
-				"stalls":           atomic.LoadInt64(&stalls),
 				"last_job_at":      lastJob.Format(time.RFC3339),
 				"uptime_seconds":   time.Since(startTime).Seconds(),
 			})
@@ -80,7 +78,7 @@ func main() {
 
 	lastJobTime.Store(time.Time{})
 
-	pollTicker := time.NewTicker(1 * time.Minute)
+	pollTicker := time.NewTicker(1 * time.Hour)
 	defer pollTicker.Stop()
 
 	for {
@@ -90,13 +88,8 @@ func main() {
 			chromeManager.Cleanup()
 			return
 		case <-pollTicker.C:
-			lastJob, _ := lastJobTime.Load().(time.Time)
-			if !lastJob.IsZero() && time.Since(lastJob) > 15*time.Minute {
-				log.Printf("[scraper] ⚠️ Stalled: no job in %v", time.Since(lastJob).Round(time.Second))
-				atomic.AddInt64(&stalls, 1)
-			}
-			log.Printf("[scraper] 💓 still polling... (jobs=%d failed=%d stalls=%d)",
-				atomic.LoadInt64(&jobsReceived), atomic.LoadInt64(&jobsFailed), atomic.LoadInt64(&stalls))
+			log.Printf("[scraper] 💓 still polling... (jobs=%d failed=%d)",
+				atomic.LoadInt64(&jobsReceived), atomic.LoadInt64(&jobsFailed))
 		default:
 			// Blocking consume — tunggu job dari scheduler
 			var job map[string]string
