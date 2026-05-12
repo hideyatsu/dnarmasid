@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"dnarmasid/services/scraper/chrome"
 	"dnarmasid/services/storage"
 	"dnarmasid/shared/config"
 	"dnarmasid/shared/models"
@@ -26,10 +27,11 @@ type AntamScraper struct {
 	cfg     *config.Config
 	db      *gorm.DB
 	storage storage.StorageService
+	chrome  *chrome.Manager
 }
 
-func NewAntamScraper(cfg *config.Config, db *gorm.DB, storage storage.StorageService) *AntamScraper {
-	return &AntamScraper{cfg: cfg, db: db, storage: storage}
+func NewAntamScraper(cfg *config.Config, db *gorm.DB, storage storage.StorageService, chromeManager *chrome.Manager) *AntamScraper {
+	return &AntamScraper{cfg: cfg, db: db, storage: storage, chrome: chromeManager}
 }
 
 // Run menjalankan scraping dan return GoldScrapedEvent
@@ -176,24 +178,24 @@ func (s *AntamScraper) scrapeWithChromedp(defaultDate time.Time) (time.Time, []m
 		chromePath = "/usr/bin/google-chrome"
 	}
 
-	allocOpts := append(chromedp.DefaultExecAllocatorOptions[:],
-		chromedp.ExecPath(chromePath),
-		chromedp.Flag("headless", true),
-		chromedp.Flag("no-sandbox", true),
-		chromedp.Flag("disable-dev-shm-usage", true),
-		chromedp.Flag("disable-gpu", true),
-		chromedp.Flag("disable-software-rasterizer", true),
-		chromedp.Flag("disable-extensions", true),
-		chromedp.Flag("disable-background-networking", true),
-		chromedp.Flag("disable-sync", true),
-		chromedp.Flag("disable-translate", true),
-		chromedp.Flag("no-first-run", true),
-		chromedp.Flag("disable-setuid-sandbox", true),
-		chromedp.UserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"),
-	)
+	port, err := s.chrome.GetFreePort()
+	if err != nil {
+		return defaultDate, nil, "", "", fmt.Errorf("failed to get free port: %w", err)
+	}
 
-	allocCtx, allocCancel := chromedp.NewExecAllocator(context.Background(), allocOpts...)
+	// Spawn Chrome using our manager
+	cmd, err := s.chrome.Spawn(context.Background(), chromePath, port)
+	if err != nil {
+		return defaultDate, nil, "", "", fmt.Errorf("failed to spawn chrome: %w", err)
+	}
+
+	// Create remote allocator to connect to our spawned chrome
+	allocCtx, allocCancel := chromedp.NewRemoteAllocator(context.Background(), fmt.Sprintf("ws://127.0.0.1:%d", port))
 	defer allocCancel()
+
+	// We don't need to defer cmd.Wait() here because main.go calls chromeManager.Cleanup()
+	// which will kill and reap the process. But we can do it here for extra safety.
+	defer s.chrome.CleanupOne(cmd)
 
 	// Parallel scraping using errgroup
 	g, ctx := errgroup.WithContext(allocCtx)
