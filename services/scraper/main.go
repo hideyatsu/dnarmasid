@@ -52,8 +52,9 @@ func main() {
 				// Successfully reaped a child process
 			}
 			if err != nil && err == syscall.ECHILD {
-				// No child processes left to wait for
-				time.Sleep(10 * time.Second)
+				// No child processes left to wait for.
+				// We sleep longer to save CPU, as parent usually reaps directly.
+				time.Sleep(30 * time.Second)
 				continue
 			}
 			time.Sleep(2 * time.Second)
@@ -68,9 +69,9 @@ func main() {
 			lastJob, _ := lastJobTime.Load().(time.Time)
 			status := "ok"
 
-			// If stalled for more than 30 minutes, mark as degraded (optional)
+			// If stalled for more than 30 minutes, mark as degraded
 			if !lastJob.IsZero() && time.Since(lastJob) > 30*time.Minute {
-				// status = "stalled"
+				status = "degraded"
 			}
 
 			w.Header().Set("Content-Type", "application/json")
@@ -80,7 +81,13 @@ func main() {
 				"jobs_received":    atomic.LoadInt64(&jobsReceived),
 				"jobs_failed":      atomic.LoadInt64(&jobsFailed),
 				"last_job_at":      lastJob.Format(time.RFC3339),
-				"uptime_seconds":   time.Since(startTime).Seconds(),
+				"stalled_minutes": func() int64 {
+					if lastJob.IsZero() {
+						return 0
+					}
+					return int64(time.Since(lastJob).Minutes())
+				}(),
+				"uptime_seconds": time.Since(startTime).Seconds(),
 			})
 		})
 		log.Println("[scraper] 🏥 Health endpoint listening on :9090")
@@ -97,7 +104,7 @@ func main() {
 
 	lastJobTime.Store(time.Time{})
 
-	pollTicker := time.NewTicker(1 * time.Hour)
+	pollTicker := time.NewTicker(15 * time.Minute)
 	defer pollTicker.Stop()
 
 	for {
