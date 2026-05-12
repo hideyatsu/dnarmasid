@@ -41,6 +41,25 @@ func main() {
 
 	startTime := time.Now()
 	chromeManager := chrome.NewManager()
+
+	// Global Zombie Reaper — Reaps orphaned processes (Chrome children)
+	go func() {
+		log.Println("[scraper] 🛡️ Global Zombie Reaper started")
+		for {
+			var ws syscall.WaitStatus
+			pid, err := syscall.Wait4(-1, &ws, syscall.WNOHANG, nil)
+			if pid > 0 {
+				// Successfully reaped a child process
+			}
+			if err != nil && err == syscall.ECHILD {
+				// No child processes left to wait for
+				time.Sleep(10 * time.Second)
+				continue
+			}
+			time.Sleep(2 * time.Second)
+		}
+	}()
+
 	scraper := NewAntamScraper(cfg, database, r2Uploader, chromeManager)
 
 	// Health endpoint
