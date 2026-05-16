@@ -38,6 +38,8 @@ type Config struct {
 	// Scraper
 	AntamURL             string
 	ScrapeTimeoutSeconds int
+	ScraperAPIURL        string
+	ScraperAPIKey        string
 
 	// Scheduler
 	ScheduleCron        string
@@ -96,6 +98,8 @@ func Load() *Config {
 
 		AntamURL:             getEnv("ANTAM_URL", "https://www.logammulia.com/id/harga-emas-hari-ini"),
 		ScrapeTimeoutSeconds: scrapeTimeout,
+		ScraperAPIURL:        getEnv("SCRAPER_API_URL", ""),
+		ScraperAPIKey:        getEnv("SCRAPER_API_KEY", ""),
 
 		ScheduleCron:        getEnv("SCHEDULE_CRON", "0 9 * * *"),
 		ScheduleCronEvening: getEnv("SCHEDULE_CRON_EVENING", "0 18 * * *"),

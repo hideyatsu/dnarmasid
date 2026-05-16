@@ -2,8 +2,10 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -45,8 +47,23 @@ func (s *AntamScraper) Run(forceDummy bool) (*models.GoldScrapedEvent, error) {
 	loc, _ := time.LoadLocation("Asia/Jakarta")
 	today := time.Now().In(loc).Truncate(24 * time.Hour)
 
-	// 1. Jalankan scraping menggunakan chromedp (bypass anti-bot)
-	updateTime, prices, screenshotPrice, screenshotBuyback, err := s.scrapeWithChromedp(today)
+	// 1. Jalankan scraping menggunakan chromedp (bypass anti-bot) atau API eksternal
+	var updateTime time.Time
+	var prices []models.GoldPrice
+	var screenshotPrice, screenshotBuyback string
+	var err error
+
+	if s.cfg.ScraperAPIURL != "" {
+		log.Printf("[scraper] 🌐 Menggunakan API Eksternal: %s", s.cfg.ScraperAPIURL)
+		updateTime, prices, screenshotPrice, screenshotBuyback, err = s.scrapeWithAPI()
+		if err != nil {
+			log.Printf("[scraper] ⚠️ API Eksternal gagal: %v. Fallback ke scrape mandiri...", err)
+			updateTime, prices, screenshotPrice, screenshotBuyback, err = s.scrapeWithChromedp(today)
+		}
+	} else {
+		updateTime, prices, screenshotPrice, screenshotBuyback, err = s.scrapeWithChromedp(today)
+	}
+
 	if err != nil {
 		return nil, fmt.Errorf("scrape error: %w", err)
 	}
@@ -59,7 +76,7 @@ func (s *AntamScraper) Run(forceDummy bool) (*models.GoldScrapedEvent, error) {
 	var latestRecord models.GoldPrice
 	result := s.db.Where("gram = 1").Order("source_update_time desc").First(&latestRecord)
 	if result.Error == nil && latestRecord.SourceUpdateTime != nil && latestRecord.SourceUpdateTime.Equal(updateTime) {
-		log.Printf("[scraper] ℹ️ Jam update sama (%v). Skip pipeline.", updateTime.Format("15:04:05"))
+		log.Printf("[scraper] ℹ️ Waktu update sama (%v). Skip pipeline.", updateTime.Format("02 Jan 2006 15:04:05"))
 		return nil, fmt.Errorf("no update since last scrape")
 	}
 
@@ -166,6 +183,102 @@ func (s *AntamScraper) runDummy() (*models.GoldScrapedEvent, error) {
 	}
 
 	return event, nil
+}
+
+func (s *AntamScraper) scrapeWithAPI() (time.Time, []models.GoldPrice, string, string, error) {
+	apiURL := fmt.Sprintf("%s/api/v1/prices/list?source=logammulia&brand=antam", strings.TrimSuffix(s.cfg.ScraperAPIURL, "/"))
+	req, err := http.NewRequest("GET", apiURL, nil)
+	if err != nil {
+		return time.Time{}, nil, "", "", fmt.Errorf("failed to create API request: %w", err)
+	}
+
+	if s.cfg.ScraperAPIKey != "" {
+		req.Header.Set("X-API-KEY", s.cfg.ScraperAPIKey)
+	}
+
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return time.Time{}, nil, "", "", fmt.Errorf("API request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return time.Time{}, nil, "", "", fmt.Errorf("API returned non-200 status: %d", resp.StatusCode)
+	}
+
+	var payload struct {
+		Status string `json:"status"`
+		Data   struct {
+			Prices []struct {
+				Category  string  `json:"category"`
+				Weight    float64 `json:"weight"`
+				BasePrice int64   `json:"base_price"`
+			} `json:"prices"`
+			Buybacks []struct {
+				Weight float64 `json:"weight"`
+				Price  int64   `json:"price"`
+			} `json:"buybacks"`
+			Screenshots []struct {
+				Type          string `json:"type"`
+				ScreenshotURL string `json:"screenshot_url"`
+			} `json:"screenshots"`
+		} `json:"data"`
+		Metadata struct {
+			SiteUpdateAt string `json:"site_update_at"`
+		} `json:"metadata"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		return time.Time{}, nil, "", "", fmt.Errorf("failed to decode API response: %w", err)
+	}
+
+	if payload.Status != "success" {
+		return time.Time{}, nil, "", "", fmt.Errorf("API returned non-success status: %s", payload.Status)
+	}
+
+	updateTime, err := time.Parse(time.RFC3339, payload.Metadata.SiteUpdateAt)
+	if err != nil {
+		loc, _ := time.LoadLocation("Asia/Jakarta")
+		updateTime = time.Now().In(loc)
+	}
+
+	var buybackSellPrice int64
+	for _, bb := range payload.Data.Buybacks {
+		if bb.Weight == 1 {
+			buybackSellPrice = bb.Price
+			break
+		}
+	}
+
+	var screenshotPrice, screenshotBuyback string
+	for _, ss := range payload.Data.Screenshots {
+		if ss.Type == "price-update" {
+			screenshotPrice = ss.ScreenshotURL
+		} else if ss.Type == "buyback-update" {
+			screenshotBuyback = ss.ScreenshotURL
+		}
+	}
+
+	var prices []models.GoldPrice
+	for _, p := range payload.Data.Prices {
+		if p.Category != "Emas Batangan" {
+			continue
+		}
+
+		sellPrice := int64(p.Weight * float64(buybackSellPrice))
+
+		prices = append(prices, models.GoldPrice{
+			Date:             updateTime.Truncate(24 * time.Hour),
+			Gram:             p.Weight,
+			BuyPrice:         p.BasePrice,
+			SellPrice:        sellPrice,
+			SourceURL:        s.cfg.ScraperAPIURL,
+			SourceUpdateTime: &updateTime,
+		})
+	}
+
+	return updateTime, prices, screenshotPrice, screenshotBuyback, nil
 }
 
 // scrapeWithChromedp uses chromedp headless browser to bypass anti-bot protection
