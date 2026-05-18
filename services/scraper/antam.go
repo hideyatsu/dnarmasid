@@ -253,10 +253,13 @@ func (s *AntamScraper) scrapeWithAPI() (time.Time, []models.GoldPrice, string, s
 
 	var screenshotPrice, screenshotBuyback string
 	for _, ss := range payload.Data.Screenshots {
-		if ss.Type == "price-update" {
+		if ss.Type == "price-update" && screenshotPrice == "" {
 			screenshotPrice = ss.ScreenshotURL
-		} else if ss.Type == "buyback-update" {
+		} else if ss.Type == "buyback-update" && screenshotBuyback == "" {
 			screenshotBuyback = ss.ScreenshotURL
+		}
+		if screenshotPrice != "" && screenshotBuyback != "" {
+			break
 		}
 	}
 
