@@ -9,6 +9,7 @@ import (
 
 	"dnarmasid/shared/config"
 	"dnarmasid/shared/models"
+	"html"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"gorm.io/gorm"
@@ -70,26 +71,54 @@ func (b *Broadcaster) SendMedia(event *models.MediaReadyEvent) error {
 
 // sendImageFile upload dan kirim file gambar ke Telegram
 func (b *Broadcaster) sendImageFile(chatID int64, threadID int, event *models.MediaReadyEvent) error {
-	f, err := os.Open(event.FilePath)
-	if err != nil {
-		return fmt.Errorf("open image file: %w", err)
-	}
-	defer f.Close()
-
 	caption := fmt.Sprintf("<b>🖼️ Infografis Harga Emas</b>\n📅 %s\n\nSiap diposting ke Instagram, Facebook, Threads.", event.Date)
 
-	params := tgbotapi.Params{}
-	params.AddNonZero64("chat_id", chatID)
-	params.AddNonZero("message_thread_id", threadID)
-	params.AddNonEmpty("caption", caption)
-	params.AddNonEmpty("parse_mode", "HTML")
+	if event.PublicURL != "" || event.ScreenshotPriceURL != "" || event.ScreenshotBuybackURL != "" {
+		caption += "\n\n<b>🔗 Download:</b>"
+		if event.PublicURL != "" {
+			caption += fmt.Sprintf("\n• <a href=\"%s\">Infografis HD</a>", event.PublicURL)
+		}
+		if event.ScreenshotPriceURL != "" {
+			caption += fmt.Sprintf("\n• <a href=\"%s\">Screenshot Harga</a>", event.ScreenshotPriceURL)
+		}
+		if event.ScreenshotBuybackURL != "" {
+			caption += fmt.Sprintf("\n• <a href=\"%s\">Screenshot Buyback</a>", event.ScreenshotBuybackURL)
+		}
+	}
 
-	_, err = b.bot.UploadFiles("sendPhoto", params, []tgbotapi.RequestFile{{
-		Name: "photo",
-		Data: tgbotapi.FileReader{Name: event.FileName, Reader: f},
-	}})
-	if err != nil {
-		return fmt.Errorf("send photo: %w", err)
+	// Jika FilePath adalah URL, kirim langsung via URL
+	if strings.HasPrefix(event.FilePath, "http") {
+		params := tgbotapi.Params{}
+		params.AddNonZero64("chat_id", chatID)
+		params.AddNonZero("message_thread_id", threadID)
+		params.AddNonEmpty("photo", event.FilePath)
+		params.AddNonEmpty("caption", caption)
+		params.AddNonEmpty("parse_mode", "HTML")
+		_, err := b.bot.MakeRequest("sendPhoto", params)
+		if err != nil {
+			return fmt.Errorf("send photo by url: %w", err)
+		}
+	} else {
+		// Kirim via upload file lokal
+		f, err := os.Open(event.FilePath)
+		if err != nil {
+			return fmt.Errorf("open image file: %w", err)
+		}
+		defer f.Close()
+
+		params := tgbotapi.Params{}
+		params.AddNonZero64("chat_id", chatID)
+		params.AddNonZero("message_thread_id", threadID)
+		params.AddNonEmpty("caption", caption)
+		params.AddNonEmpty("parse_mode", "HTML")
+
+		_, err = b.bot.UploadFiles("sendPhoto", params, []tgbotapi.RequestFile{{
+			Name: "photo",
+			Data: tgbotapi.FileReader{Name: event.FileName, Reader: f},
+		}})
+		if err != nil {
+			return fmt.Errorf("send photo by upload: %w", err)
+		}
 	}
 
 	log.Printf("[broadcaster] 🖼️ Image sent to chat %d (thread %d): %s", chatID, threadID, event.FileName)
@@ -110,26 +139,53 @@ func (b *Broadcaster) sendVideoFile(chatID int64, threadID int, event *models.Me
 		return nil
 	}
 
-	f, err := os.Open(event.FilePath)
-	if err != nil {
-		return fmt.Errorf("open video file: %w", err)
-	}
-	defer f.Close()
-
 	caption := fmt.Sprintf("<b>🎬 Video/Reels Harga Emas</b>\n📅 %s\n\nSiap diposting ke TikTok, YouTube Shorts, Instagram Reels.", event.Date)
 
-	params := tgbotapi.Params{}
-	params.AddNonZero64("chat_id", chatID)
-	params.AddNonZero("message_thread_id", threadID)
-	params.AddNonEmpty("caption", caption)
-	params.AddNonEmpty("parse_mode", "HTML")
+	if event.PublicURL != "" || event.ScreenshotPriceURL != "" || event.ScreenshotBuybackURL != "" {
+		caption += "\n\n<b>🔗 Download:</b>"
+		if event.PublicURL != "" {
+			caption += fmt.Sprintf("\n• <a href=\"%s\">Video HD</a>", event.PublicURL)
+		}
+		if event.ScreenshotPriceURL != "" {
+			caption += fmt.Sprintf("\n• <a href=\"%s\">Screenshot Harga</a>", event.ScreenshotPriceURL)
+		}
+		if event.ScreenshotBuybackURL != "" {
+			caption += fmt.Sprintf("\n• <a href=\"%s\">Screenshot Buyback</a>", event.ScreenshotBuybackURL)
+		}
+	}
 
-	_, err = b.bot.UploadFiles("sendVideo", params, []tgbotapi.RequestFile{{
-		Name: "video",
-		Data: tgbotapi.FileReader{Name: event.FileName, Reader: f},
-	}})
-	if err != nil {
-		return fmt.Errorf("send video: %w", err)
+	// Jika FilePath adalah URL, kirim langsung via URL
+	if strings.HasPrefix(event.FilePath, "http") {
+		params := tgbotapi.Params{}
+		params.AddNonZero64("chat_id", chatID)
+		params.AddNonZero("message_thread_id", threadID)
+		params.AddNonEmpty("video", event.FilePath)
+		params.AddNonEmpty("caption", caption)
+		params.AddNonEmpty("parse_mode", "HTML")
+		_, err := b.bot.MakeRequest("sendVideo", params)
+		if err != nil {
+			return fmt.Errorf("send video by url: %w", err)
+		}
+	} else {
+		f, err := os.Open(event.FilePath)
+		if err != nil {
+			return fmt.Errorf("open video file: %w", err)
+		}
+		defer f.Close()
+
+		params := tgbotapi.Params{}
+		params.AddNonZero64("chat_id", chatID)
+		params.AddNonZero("message_thread_id", threadID)
+		params.AddNonEmpty("caption", caption)
+		params.AddNonEmpty("parse_mode", "HTML")
+
+		_, err = b.bot.UploadFiles("sendVideo", params, []tgbotapi.RequestFile{{
+			Name: "video",
+			Data: tgbotapi.FileReader{Name: event.FileName, Reader: f},
+		}})
+		if err != nil {
+			return fmt.Errorf("send video by upload: %w", err)
+		}
 	}
 
 	log.Printf("[broadcaster] 🎬 Video sent to chat %d (thread %d): %s", chatID, threadID, event.FileName)
@@ -211,17 +267,27 @@ func (b *Broadcaster) SendScrapeNotification(event *models.GoldScrapedEvent) err
 
 	// Deteksi panah trend (Buy)
 	trendArrow := "▬"
-	if event.Trend == "up" {
+	switch event.Trend {
+	case "up":
 		trendArrow = "▲"
-	} else if event.Trend == "down" {
+	case "naik":
+		trendArrow = "▲"
+	case "down":
+		trendArrow = "▼"
+	case "turun":
 		trendArrow = "▼"
 	}
 
 	// Deteksi panah trend (Buyback)
 	bbTrendArrow := "▬"
-	if event.BuybackTrend == "up" {
+	switch event.BuybackTrend {
+	case "up":
 		bbTrendArrow = "▲"
-	} else if event.BuybackTrend == "down" {
+	case "naik":
+		bbTrendArrow = "▲"
+	case "down":
+		bbTrendArrow = "▼"
+	case "turun":
 		bbTrendArrow = "▼"
 	}
 
@@ -244,6 +310,30 @@ func (b *Broadcaster) SendScrapeNotification(event *models.GoldScrapedEvent) err
 
 	b.sendText(chatID, threadID, msgText)
 	log.Printf("[broadcaster] ✅ Sent scrape notification to chat %d (thread %d)", chatID, threadID)
+
+	return nil
+}
+
+// SendScrapeFailureNotification mengirim notifikasi kegagalan scraping
+func (b *Broadcaster) SendScrapeFailureNotification(event *models.ScrapeFailedEvent) error {
+	if b.cfg.TelegramGroupID == 0 {
+		return fmt.Errorf("TELEGRAM_GROUP_ID belum dikonfigurasi")
+	}
+
+	chatID := b.cfg.TelegramGroupID
+	threadID := b.cfg.TelegramThreadGeneralID
+
+	msgText := fmt.Sprintf(
+		"⚠️ <b>Gagal Mengambil Data Harga Emas</b>\n\n"+
+			"📅 Tanggal: %s\n"+
+			"🔍 Sumber: %s\n"+
+			"❌ Error: <code>%s</code>\n\n"+
+			"Sistem akan mencoba kembali pada jadwal berikutnya.",
+		event.Date, event.Source, html.EscapeString(event.Message),
+	)
+
+	b.sendHTML(chatID, threadID, msgText)
+	log.Printf("[broadcaster] ⚠️ Sent scrape failure notification to chat %d (thread %d)", chatID, threadID)
 
 	return nil
 }

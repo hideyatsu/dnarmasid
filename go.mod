@@ -1,16 +1,40 @@
 module dnarmasid
 
-go 1.22
+go 1.24
 
 require (
-	github.com/fogleman/gg v1.3.0
 	github.com/go-telegram-bot-api/telegram-bot-api/v5 v5.5.1
 	github.com/gocolly/colly/v2 v2.1.0
 	github.com/joho/godotenv v1.5.1
 	github.com/redis/go-redis/v9 v9.5.1
+	github.com/hibiken/asynq v0.24.1
 	github.com/robfig/cron/v3 v3.0.1
 	gorm.io/driver/mysql v1.5.6
 	gorm.io/gorm v1.25.9
+)
+
+require golang.org/x/sync v0.8.0
+
+require (
+	github.com/aws/aws-sdk-go-v2 v1.41.6 // indirect
+	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.9 // indirect
+	github.com/aws/aws-sdk-go-v2/config v1.32.16 // indirect
+	github.com/aws/aws-sdk-go-v2/credentials v1.19.15 // indirect
+	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.18.22 // indirect
+	github.com/aws/aws-sdk-go-v2/feature/s3/manager v1.22.16 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/configsources v1.4.22 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.7.22 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/v4a v1.4.23 // indirect
+	github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.13.8 // indirect
+	github.com/aws/aws-sdk-go-v2/service/internal/checksum v1.9.14 // indirect
+	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.13.22 // indirect
+	github.com/aws/aws-sdk-go-v2/service/internal/s3shared v1.19.22 // indirect
+	github.com/aws/aws-sdk-go-v2/service/s3 v1.100.0 // indirect
+	github.com/aws/aws-sdk-go-v2/service/signin v1.0.10 // indirect
+	github.com/aws/aws-sdk-go-v2/service/sso v1.30.16 // indirect
+	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.35.20 // indirect
+	github.com/aws/aws-sdk-go-v2/service/sts v1.42.0 // indirect
+	github.com/aws/smithy-go v1.25.0 // indirect
 )
 
 require (
@@ -20,8 +44,8 @@ require (
 	github.com/antchfx/xmlquery v1.2.4 // indirect
 	github.com/antchfx/xpath v1.1.8 // indirect
 	github.com/cespare/xxhash/v2 v2.2.0 // indirect
-	github.com/chromedp/cdproto v0.0.0-20240801214329-3f85d328b335 // indirect
-	github.com/chromedp/chromedp v0.10.0 // indirect
+	github.com/chromedp/cdproto v0.0.0-20240801214329-3f85d328b335
+	github.com/chromedp/chromedp v0.10.0
 	github.com/chromedp/sysutil v1.0.0 // indirect
 	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
 	github.com/go-sql-driver/mysql v1.7.0 // indirect
@@ -29,7 +53,6 @@ require (
 	github.com/gobwas/httphead v0.1.0 // indirect
 	github.com/gobwas/pool v0.2.1 // indirect
 	github.com/gobwas/ws v1.4.0 // indirect
-	github.com/golang/freetype v0.0.0-20170609003504-e2365dfdc4a0 // indirect
 	github.com/golang/groupcache v0.0.0-20200121045136-8c9f03a8e57e // indirect
 	github.com/golang/protobuf v1.4.2 // indirect
 	github.com/jinzhu/inflection v1.0.0 // indirect
@@ -39,7 +62,6 @@ require (
 	github.com/mailru/easyjson v0.7.7 // indirect
 	github.com/saintfish/chardet v0.0.0-20120816061221-3af4cd4741ca // indirect
 	github.com/temoto/robotstxt v1.1.1 // indirect
-	golang.org/x/image v0.15.0 // indirect
 	golang.org/x/net v0.0.0-20200602114024-627f9648deb9 // indirect
 	golang.org/x/sys v0.22.0 // indirect
 	golang.org/x/text v0.14.0 // indirect

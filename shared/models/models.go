@@ -21,7 +21,7 @@ type GoldPrice struct {
 
 // GoldScrapedEvent — payload Redis: scraper → ai-generator & media-generator
 type GoldScrapedEvent struct {
-	Date       string       `json:"date"`        // "2026-04-04"
+	Date       string       `json:"date"`        // "04 Apr 2026"
 	UpdateTime string       `json:"update_time"` // "05 Apr 2026 07:31:00"
 	PriceID    uint         `json:"price_id"`    // ID dari gold_prices
 	Prices    []GoldPrice  `json:"prices"`      // semua gram hari ini
@@ -30,6 +30,15 @@ type GoldScrapedEvent struct {
 	Trend            string       `json:"trend"`       // "up" | "down" | "stable"
 	BuybackChangeAmt int64        `json:"buyback_change_amt"`
 	BuybackTrend     string       `json:"buyback_trend"`
+	ScreenshotPriceURL   string   `json:"screenshot_price_url"`
+	ScreenshotBuybackURL string   `json:"screenshot_buyback_url"`
+}
+
+// ScrapeFailedEvent — payload Redis: scraper → telegram-bot (saat gagal)
+type ScrapeFailedEvent struct {
+	Date    string `json:"date"`
+	Source  string `json:"source"`
+	Message string `json:"message"`
 }
 
 // ─────────────────────────────────────────
@@ -92,6 +101,7 @@ type GeneratedMedia struct {
 	MediaType MediaType `json:"media_type"`
 	FilePath  string    `json:"file_path"`
 	FileName  string    `json:"file_name"`
+	PublicURL string    `json:"public_url"`
 	Status    string    `gorm:"default:pending" json:"status"`
 	CreatedAt time.Time `json:"created_at"`
 }
@@ -103,6 +113,19 @@ type MediaReadyEvent struct {
 	MediaType MediaType `json:"media_type"`
 	FilePath  string    `json:"file_path"`
 	FileName  string    `json:"file_name"`
+	PublicURL string    `json:"public_url"`
+	ScreenshotPriceURL   string `json:"screenshot_price_url"`
+	ScreenshotBuybackURL string `json:"screenshot_buyback_url"`
+}
+
+// MediaGenerationCompletedEvent — payload Redis: media-generator → repliz-uploader
+type MediaGenerationCompletedEvent struct {
+	PriceID              uint   `json:"price_id"`
+	Date                 string `json:"date"`
+	Caption              string `json:"caption"` // AI generated caption
+	InfographicURL       string `json:"infographic_url"` // R2 link of the image
+	ScreenshotPriceURL   string `json:"screenshot_price_url"` // R2 link of the screenshot
+	ScreenshotBuybackURL string `json:"screenshot_buyback_url"` // R2 link of buyback screenshot
 }
 
 // ─────────────────────────────────────────

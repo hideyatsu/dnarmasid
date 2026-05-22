@@ -11,18 +11,21 @@ import (
 
 	"dnarmasid/shared/config"
 	"dnarmasid/shared/models"
+	"dnarmasid/services/storage"
+	"dnarmasid/shared/utils"
 
 	"github.com/chromedp/chromedp"
 	"gorm.io/gorm"
 )
 
 type MediaGenerator struct {
-	cfg *config.Config
-	db  *gorm.DB
+	cfg     *config.Config
+	db      *gorm.DB
+	storage *storage.R2Uploader
 }
 
-func NewMediaGenerator(cfg *config.Config, db *gorm.DB) *MediaGenerator {
-	return &MediaGenerator{cfg: cfg, db: db}
+func NewMediaGenerator(cfg *config.Config, db *gorm.DB, r2Uploader *storage.R2Uploader) *MediaGenerator {
+	return &MediaGenerator{cfg: cfg, db: db, storage: r2Uploader}
 }
 
 // GenerateImage membuat infografis harga emas memakai chromedp & HTML template
@@ -104,7 +107,7 @@ func (g *MediaGenerator) GenerateImage(event *models.GoldScrapedEvent) (*models.
 	absHtmlPath, _ := filepath.Abs(tempHtmlPath)
 	fileURL := "file://" + absHtmlPath
 
-	fileName := fmt.Sprintf("gold_%s.png", event.Date)
+	fileName := fmt.Sprintf("gold_%s.jpeg", event.Date)
 	filePath := filepath.Join(g.cfg.MediaOutputPath, fileName)
 
 	// Setup ExecAllocator untuk menginzinkan flag sandboxing no-sandbox saat di Docker (Alpine linux + Root)
@@ -112,6 +115,8 @@ func (g *MediaGenerator) GenerateImage(event *models.GoldScrapedEvent) (*models.
 		chromedp.Flag("no-sandbox", true),
 		chromedp.Flag("disable-setuid-sandbox", true),
 		chromedp.Flag("disable-dev-shm-usage", true),
+		chromedp.Flag("binary", "/usr/bin/chromium-browser"),
+		chromedp.Flag("extra-chromium-args", "--headless=new --disable-gpu"),
 	)
 	allocCtx, allocCancel := chromedp.NewExecAllocator(context.Background(), opts...)
 	defer allocCancel()
@@ -136,82 +141,47 @@ func (g *MediaGenerator) GenerateImage(event *models.GoldScrapedEvent) (*models.
 		return nil, fmt.Errorf("chromedp capture error: %w", err)
 	}
 
-	if err := os.WriteFile(filePath, buf, 0644); err != nil {
-		return nil, fmt.Errorf("failed exporting png: %w", err)
+	jpegBuf, err := utils.ConvertPNGToJPEG(buf)
+	if err != nil {
+		return nil, fmt.Errorf("failed converting png to jpeg: %w", err)
+	}
+
+	if err := os.WriteFile(filePath, jpegBuf, 0644); err != nil {
+		return nil, fmt.Errorf("failed exporting jpeg: %w", err)
 	}
 
 	log.Printf("[media-generator] 🖼️ Image saved via chromedp: %s", filePath)
 
-	// Simpan ke DB
-	media := models.GeneratedMedia{
-		PriceID:   event.PriceID,
-		MediaType: models.MediaTypeImage,
-		FilePath:  filePath,
-		FileName:  fileName,
-		Status:    "pending",
-	}
-	g.db.Create(&media)
-
-	return &models.MediaReadyEvent{
-		PriceID:   event.PriceID,
-		Date:      event.Date,
-		MediaType: models.MediaTypeImage,
-		FilePath:  filePath,
-		FileName:  fileName,
-	}, nil
-}
-
-// ─────────────────────────────────────────
-// Helper
-// ─────────────────────────────────────────
-
-func formatRupiah(amount int64) string {
-	s := fmt.Sprintf("%d", abs(amount))
-	result := ""
-	for i, c := range reverseStr(s) {
-		if i > 0 && i%3 == 0 {
-			result = "." + result
+	// Upload ke R2 jika tersedia
+	var publicURL string
+	if g.storage != nil {
+		content, err := os.ReadFile(filePath)
+		if err == nil {
+			url, err := g.storage.UploadFile(context.Background(), fileName, content, "image/jpeg")
+			if err != nil {
+				log.Printf("[media-generator] ❌ R2 upload failed: %v", err)
+			} else {
+				log.Printf("[media-generator] ☁️ Infographic uploaded to R2: %s", url)
+				publicURL = url
+				// Hapus file lokal setelah berhasil upload
+				os.Remove(filePath)
+				log.Printf("[media-generator] 🗑️ Local file removed: %s", filePath)
+			}
 		}
-		result = string(c) + result
 	}
-	return result
-}
 
-func reverseStr(s string) string {
-	runes := []rune(s)
-	for i, j := 0, len(runes)-1; i < j; i, j = i+1, j-1 {
-		runes[i], runes[j] = runes[j], runes[i]
+	// Simpan ke DB
+	finalPath := filePath
+	if publicURL != "" {
+		finalPath = publicURL
 	}
-	return string(runes)
-}
-
-func abs(x int64) int64 {
-	if x < 0 {
-		return -x
-	}
-	return x
-}
-
-// GenerateVideo — placeholder, butuh FFmpeg di production
-func (g *MediaGenerator) GenerateVideo(event *models.GoldScrapedEvent) (*models.MediaReadyEvent, error) {
-	fileName := fmt.Sprintf("gold_%s.mp4.todo", event.Date)
-	filePath := filepath.Join(g.cfg.MediaOutputPath, fileName)
-
-	f, err := os.Create(filePath)
-	if err != nil {
-		return nil, err
-	}
-	f.WriteString(fmt.Sprintf("Video placeholder for %s\nGenerated at: %s",
-		event.Date, time.Now().Format(time.RFC3339)))
-	f.Close()
-
-	log.Printf("[media-generator] 🎬 Video placeholder created: %s", fileName)
 
 	media := models.GeneratedMedia{
 		PriceID:   event.PriceID,
-		MediaType: models.MediaTypeVideo,
-		FilePath:  filePath,
+		MediaType: models.MediaTypeImage,
+		FilePath:  finalPath,
 		FileName:  fileName,
+		PublicURL: publicURL,
 		Status:    "pending",
 	}
 	g.db.Create(&media)
@@ -219,31 +189,12 @@ func (g *MediaGenerator) GenerateVideo(event *models.GoldScrapedEvent) (*models.
 	return &models.MediaReadyEvent{
 		PriceID:   event.PriceID,
 		Date:      event.Date,
-		MediaType: models.MediaTypeVideo,
-		FilePath:  filePath,
+		MediaType: models.MediaTypeImage,
+		FilePath:  finalPath,
 		FileName:  fileName,
+		PublicURL: publicURL,
+		ScreenshotPriceURL:   event.ScreenshotPriceURL,
+		ScreenshotBuybackURL: event.ScreenshotBuybackURL,
 	}, nil
 }
-func formatDate(dateStr string) string {
-	t, err := time.Parse("2006-01-02", dateStr)
-	if err != nil {
-		return dateStr
-	}
 
-	monthNames := map[time.Month]string{
-		time.January:   "Jan",
-		time.February:  "Feb",
-		time.March:     "Mar",
-		time.April:     "Apr",
-		time.May:       "Mei",
-		time.June:      "Jun",
-		time.July:      "Jul",
-		time.August:    "Agu",
-		time.September: "Sep",
-		time.October:   "Okt",
-		time.November:  "Nov",
-		time.December:  "Des",
-	}
-
-	return fmt.Sprintf("%02d %s %d", t.Day(), monthNames[t.Month()], t.Year())
-}

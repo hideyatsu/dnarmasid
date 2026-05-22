@@ -7,6 +7,7 @@ import (
 	"syscall"
 	"time"
 
+	"dnarmasid/services/storage"
 	"dnarmasid/shared/config"
 	"dnarmasid/shared/db"
 	"dnarmasid/shared/models"
@@ -20,14 +21,19 @@ func main() {
 	database := db.Connect(cfg)
 	q := queue.NewClient(cfg)
 
+	r2Uploader, err := storage.NewR2Uploader(cfg)
+	if err != nil {
+		log.Printf("[media-generator] ⚠️ R2 Storage not configured: %v", err)
+	}
+
 	database.AutoMigrate(&models.GeneratedMedia{})
 
 	// Pastikan output dir ada
 	os.MkdirAll(cfg.MediaOutputPath, 0755)
 
-	generator := NewMediaGenerator(cfg, database)
+	generator := NewMediaGenerator(cfg, database, r2Uploader)
 
-	log.Println("[media-generator] ✅ Ready. Waiting for gold.scraped events...")
+	log.Printf("[media-generator] ✅ Ready. Waiting for %s events...", queue.KeyGoldScrapedMedia)
 
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
@@ -55,6 +61,39 @@ func main() {
 					log.Printf("[media-generator] ❌ Failed to publish image media.ready: %v", err)
 				} else {
 					log.Printf("[media-generator] ✅ Image media.ready published: %s", imgEvent.FileName)
+
+					// Trigger Repliz Uploader Event with Polling for AI Caption
+					go func(priceID uint, date string, imgEvt *models.MediaReadyEvent, screenshotPriceURL string, screenshotBuybackURL string) {
+						var caption string
+						// Poll for max 30 seconds (10 retries * 3s)
+						for i := 0; i < 10; i++ {
+							var content models.GeneratedContent
+							if err := database.Where("price_id = ? AND content_type = ?", priceID, models.ContentCaption).First(&content).Error; err == nil && content.ContentText != "" {
+								caption = content.ContentText
+								break
+							}
+							time.Sleep(3 * time.Second)
+						}
+
+						if caption == "" {
+							log.Printf("[media-generator] ⚠️ Could not fetch AI caption for Repliz event after polling")
+						}
+
+						replizEvent := models.MediaGenerationCompletedEvent{
+							PriceID:              priceID,
+							Date:                 date,
+							Caption:              caption,
+							InfographicURL:       imgEvt.PublicURL,
+							ScreenshotPriceURL:   screenshotPriceURL,
+							ScreenshotBuybackURL: screenshotBuybackURL,
+						}
+
+						if err := q.Publish(queue.KeyMediaGenerationCompleted, replizEvent); err != nil {
+							log.Printf("[media-generator] ❌ Failed to publish media.generation.completed: %v", err)
+						} else {
+							log.Printf("[media-generator] ✅ Repliz event published for date %s", date)
+						}
+					}(event.PriceID, event.Date, imgEvent, event.ScreenshotPriceURL, event.ScreenshotBuybackURL)
 				}
 			}
 

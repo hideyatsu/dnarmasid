@@ -6,6 +6,8 @@ import (
 
 	"dnarmasid/shared/config"
 	"dnarmasid/shared/models"
+	"dnarmasid/shared/queue"
+	"time"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"gorm.io/gorm"
@@ -15,10 +17,11 @@ type CommandHandler struct {
 	cfg *config.Config
 	db  *gorm.DB
 	bot *tgbotapi.BotAPI
+	q   *queue.Client
 }
 
-func NewCommandHandler(cfg *config.Config, db *gorm.DB, bot *tgbotapi.BotAPI) *CommandHandler {
-	return &CommandHandler{cfg: cfg, db: db, bot: bot}
+func NewCommandHandler(cfg *config.Config, db *gorm.DB, bot *tgbotapi.BotAPI, q *queue.Client) *CommandHandler {
+	return &CommandHandler{cfg: cfg, db: db, bot: bot, q: q}
 }
 
 // Listen mendengarkan update/command dari user Telegram
@@ -64,6 +67,8 @@ func (h *CommandHandler) handleMessage(msg *tgbotapi.Message) {
 		h.handleStatus(chatID)
 	case "help":
 		h.handleHelp(chatID)
+	case "scrape":
+		h.handleScrape(chatID)
 	default:
 		if msg.IsCommand() {
 			h.send(chatID, "❓ Command tidak dikenal. Ketik /help untuk daftar command.")
@@ -143,12 +148,38 @@ func (h *CommandHandler) handleHelp(chatID int64) {
 		"/subscribe — Berlangganan update harian\n" +
 		"/unsubscribe — Berhenti berlangganan\n" +
 		"/status — Cek status langganan\n" +
-		"/help — Tampilkan bantuan\n\n" +
-		"📲 Follow kami: @DnarMasID"
+		"/help — Tampilkan bantuan\n"
+
+	if chatID == h.cfg.TelegramAdminChatID {
+		text += "/scrape — [Admin] Trigger manual scrape\n"
+	}
+
+	text += "\n📲 Follow kami: @DnarMasID"
 
 	msg := tgbotapi.NewMessage(chatID, text)
 	msg.ParseMode = "Markdown"
 	h.bot.Send(msg)
+}
+
+func (h *CommandHandler) handleScrape(chatID int64) {
+	if chatID != h.cfg.TelegramAdminChatID {
+		h.send(chatID, "❌ Maaf, command ini hanya untuk Admin.")
+		return
+	}
+
+	h.send(chatID, "⏳ Memulai proses scraping Antam secara manual...")
+
+	job := map[string]string{
+		"triggered_at": time.Now().Format(time.RFC3339),
+		"source":       "telegram_bot",
+	}
+
+	if err := h.q.Publish(queue.KeyJobScrape, job); err != nil {
+		h.send(chatID, "❌ Gagal mengirim job ke queue: "+err.Error())
+		return
+	}
+
+	h.send(chatID, "✅ Job scraping berhasil dikirim ke antrean. Mohon tunggu notifikasi hasilnya.")
 }
 
 func (h *CommandHandler) send(chatID int64, text string) {

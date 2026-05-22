@@ -28,13 +28,18 @@ type Config struct {
 	TelegramThreadGeneralID int
 	TelegramThreadPostID    int
 
-	// AI (Ollama)
-	OllamaHost  string
-	OllamaModel string
+	// AI (Ollama/Gemini)
+	AIProvider   string
+	OllamaHost   string
+	OllamaModel  string
+	GeminiAPIKey string
+	GeminiModel  string
 
 	// Scraper
 	AntamURL             string
 	ScrapeTimeoutSeconds int
+	ScraperAPIURL        string
+	ScraperAPIKey        string
 
 	// Scheduler
 	ScheduleCron        string
@@ -42,6 +47,23 @@ type Config struct {
 
 	// Media
 	MediaOutputPath string
+
+	// Cloudflare R2
+	R2AccountID    string
+	R2AccessKey    string
+	R2SecretKey    string
+	R2BucketName   string
+	R2PublicDomain string
+
+	// Repliz API
+	ReplizAccessKey       string
+	ReplizSecretKey       string
+	ReplizTikTokAccountID string
+
+	// Asynq
+	UseAsynq         bool
+	AsynqConcurrency int
+	AsynqRetryMax    int
 }
 
 // Load membaca .env dan return Config
@@ -55,6 +77,9 @@ func Load() *Config {
 	threadGeneral, _ := strconv.Atoi(getEnv("TELEGRAM_THREAD_GENERAL_ID", "0"))
 	threadPost, _ := strconv.Atoi(getEnv("TELEGRAM_THREAD_POST_ID", "0"))
 	scrapeTimeout, _ := strconv.Atoi(getEnv("SCRAPE_TIMEOUT_SECONDS", "30"))
+	useAsynq, _ := strconv.ParseBool(getEnv("USE_ASYNQ", "false"))
+	asynqConcurrency, _ := strconv.Atoi(getEnv("ASYNQ_CONCURRENCY", "10"))
+	asynqRetryMax, _ := strconv.Atoi(getEnv("ASYNQ_RETRY_MAX", "3"))
 
 	return &Config{
 		MySQLHost:     getEnv("MYSQL_HOST", "mysql"),
@@ -73,16 +98,35 @@ func Load() *Config {
 		TelegramThreadGeneralID: threadGeneral,
 		TelegramThreadPostID:    threadPost,
 
-		OllamaHost:  getEnv("OLLAMA_HOST", "http://ollama:11434"),
-		OllamaModel: getEnv("OLLAMA_MODEL", "gemma4:31b-cloud"),
+		AIProvider:   getEnv("AI_PROVIDER", "ollama"),
+		OllamaHost:   getEnv("OLLAMA_HOST", "http://ollama:11434"),
+		OllamaModel:  getEnv("OLLAMA_MODEL", "gemma4:31b-cloud"),
+		GeminiAPIKey: getEnv("GEMINI_API_KEY", ""),
+		GeminiModel:  getEnv("GEMINI_MODEL", "gemini-3.1-flash-lite-preview"),
 
 		AntamURL:             getEnv("ANTAM_URL", "https://www.logammulia.com/id/harga-emas-hari-ini"),
 		ScrapeTimeoutSeconds: scrapeTimeout,
+		ScraperAPIURL:        getEnv("SCRAPER_API_URL", ""),
+		ScraperAPIKey:        getEnv("SCRAPER_API_KEY", ""),
 
 		ScheduleCron:        getEnv("SCHEDULE_CRON", "0 9 * * *"),
 		ScheduleCronEvening: getEnv("SCHEDULE_CRON_EVENING", "0 18 * * *"),
 
 		MediaOutputPath: getEnv("MEDIA_OUTPUT_PATH", "/app/volumes/media"),
+
+		R2AccountID:    getEnv("R2_ACCOUNT_ID", ""),
+		R2AccessKey:    getEnv("R2_ACCESS_KEY", ""),
+		R2SecretKey:    getEnv("R2_SECRET_KEY", ""),
+		R2BucketName:   getEnv("R2_BUCKET_NAME", ""),
+		R2PublicDomain: getEnv("R2_PUBLIC_DOMAIN", ""),
+
+		ReplizAccessKey:       getEnv("REPLIZ_ACCESS_KEY", ""),
+		ReplizSecretKey:       getEnv("REPLIZ_SECRET_KEY", ""),
+		ReplizTikTokAccountID: getEnv("REPLIZ_TIKTOK_ACCOUNT_ID", ""),
+
+		UseAsynq:         useAsynq,
+		AsynqConcurrency: asynqConcurrency,
+		AsynqRetryMax:    asynqRetryMax,
 	}
 }
 
