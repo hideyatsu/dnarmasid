@@ -143,8 +143,8 @@ func (s *AsynqScheduler) Run() error {
 }
 
 // Shutdown stops the scheduler
-func (s *AsynqScheduler) Shutdown() error {
-	return s.scheduler.Shutdown()
+func (s *AsynqScheduler) Shutdown() {
+	s.scheduler.Shutdown()
 }
 
 // Helper
