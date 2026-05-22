@@ -178,6 +178,24 @@ services:
     profiles:
       - asynq
 
+  # Asynq worker (Phase 3+: shadow mode by default)
+  asynq-worker:
+    build:
+      context: .
+      dockerfile: services/asynq-worker/Dockerfile
+    container_name: ${COMPOSE_PROJECT_NAME:-dnarmasid}-asynq-worker
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      ASYNQ_SHADOW_MODE: ${ASYNQ_SHADOW_MODE:-true}
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - dnarmasid-net
+    profiles:
+      - asynq
+
 networks:
   dnarmasid-net:
     driver: bridge
