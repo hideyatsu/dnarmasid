@@ -9,6 +9,7 @@ RUN go mod download
 
 # Copy shared & service source
 COPY shared/ ./shared/
+COPY internal/ ./internal/
 COPY services/scheduler/ ./services/scheduler/
 
 # Build binary

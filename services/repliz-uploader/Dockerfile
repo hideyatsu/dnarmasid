@@ -9,6 +9,7 @@ RUN go mod download
 
 # Copy source code
 COPY shared/ ./shared/
+COPY internal/ ./internal/
 COPY services/repliz-uploader/ ./services/repliz-uploader/
 
 # Build

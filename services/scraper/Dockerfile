@@ -7,6 +7,7 @@ RUN apk add --no-cache git
 RUN go mod download
 
 COPY shared/ ./shared/
+COPY internal/ ./internal/
 COPY services/storage/ ./services/storage/
 COPY services/scraper/ ./services/scraper/
 
