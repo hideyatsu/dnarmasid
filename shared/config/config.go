@@ -59,6 +59,11 @@ type Config struct {
 	ReplizAccessKey       string
 	ReplizSecretKey       string
 	ReplizTikTokAccountID string
+
+	// Asynq
+	UseAsynq         bool
+	AsynqConcurrency int
+	AsynqRetryMax    int
 }
 
 // Load membaca .env dan return Config
@@ -72,6 +77,9 @@ func Load() *Config {
 	threadGeneral, _ := strconv.Atoi(getEnv("TELEGRAM_THREAD_GENERAL_ID", "0"))
 	threadPost, _ := strconv.Atoi(getEnv("TELEGRAM_THREAD_POST_ID", "0"))
 	scrapeTimeout, _ := strconv.Atoi(getEnv("SCRAPE_TIMEOUT_SECONDS", "30"))
+	useAsynq, _ := strconv.ParseBool(getEnv("USE_ASYNQ", "false"))
+	asynqConcurrency, _ := strconv.Atoi(getEnv("ASYNQ_CONCURRENCY", "10"))
+	asynqRetryMax, _ := strconv.Atoi(getEnv("ASYNQ_RETRY_MAX", "3"))
 
 	return &Config{
 		MySQLHost:     getEnv("MYSQL_HOST", "mysql"),
@@ -115,6 +123,10 @@ func Load() *Config {
 		ReplizAccessKey:       getEnv("REPLIZ_ACCESS_KEY", ""),
 		ReplizSecretKey:       getEnv("REPLIZ_SECRET_KEY", ""),
 		ReplizTikTokAccountID: getEnv("REPLIZ_TIKTOK_ACCOUNT_ID", ""),
+
+		UseAsynq:         useAsynq,
+		AsynqConcurrency: asynqConcurrency,
+		AsynqRetryMax:    asynqRetryMax,
 	}
 }
 

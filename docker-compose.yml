@@ -161,6 +161,23 @@ services:
     networks:
       - dnarmasid-net
 
+  # Asynq monitoring dashboard (optional, enable when USE_ASYNQ=true)
+  asynqmon:
+    image: hibiken/asynqmon:latest
+    container_name: dnarmasid-asynqmon
+    restart: unless-stopped
+    ports:
+      - "${ASYNQMON_PORT:-8085}:8080"
+    environment:
+      REDIS_ADDR: redis:6379
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - dnarmasid-net
+    profiles:
+      - asynq
+
 networks:
   dnarmasid-net:
     driver: bridge
