@@ -18,7 +18,7 @@ services:
 
   mysql:
     image: mysql:8.0
-    container_name: dnarmasid-mysql
+    container_name: ${COMPOSE_PROJECT_NAME:-dnarmasid}-mysql
     restart: unless-stopped
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
@@ -41,7 +41,7 @@ services:
 
   redis:
     image: redis:7-alpine
-    container_name: dnarmasid-redis
+    container_name: ${COMPOSE_PROJECT_NAME:-dnarmasid}-redis
     restart: unless-stopped
     environment:
       TZ: ${TZ}
@@ -59,7 +59,7 @@ services:
     build:
       context: .
       dockerfile: services/scheduler/Dockerfile
-    container_name: dnarmasid-scheduler
+    container_name: ${COMPOSE_PROJECT_NAME:-dnarmasid}-scheduler
     restart: unless-stopped
     env_file: .env
     depends_on:
@@ -72,7 +72,7 @@ services:
     build:
       context: .
       dockerfile: services/scraper/Dockerfile
-    container_name: dnarmasid-scraper
+    container_name: ${COMPOSE_PROJECT_NAME:-dnarmasid}-scraper
     restart: unless-stopped
     env_file: .env
     depends_on:
@@ -103,7 +103,7 @@ services:
     build:
       context: .
       dockerfile: services/ai-generator/Dockerfile
-    container_name: dnarmasid-ai-generator
+    container_name: ${COMPOSE_PROJECT_NAME:-dnarmasid}-ai-generator
     restart: unless-stopped
     env_file: .env
     depends_on:
@@ -118,7 +118,7 @@ services:
     build:
       context: .
       dockerfile: services/media-generator/Dockerfile
-    container_name: dnarmasid-media-generator
+    container_name: ${COMPOSE_PROJECT_NAME:-dnarmasid}-media-generator
     restart: unless-stopped
     env_file: .env
     depends_on:
@@ -135,7 +135,7 @@ services:
     build:
       context: .
       dockerfile: services/telegram-bot/Dockerfile
-    container_name: dnarmasid-telegram-bot
+    container_name: ${COMPOSE_PROJECT_NAME:-dnarmasid}-telegram-bot
     restart: unless-stopped
     env_file: .env
     depends_on:
@@ -152,7 +152,7 @@ services:
     build:
       context: .
       dockerfile: services/repliz-uploader/Dockerfile
-    container_name: dnarmasid-repliz-uploader
+    container_name: ${COMPOSE_PROJECT_NAME:-dnarmasid}-repliz-uploader
     restart: unless-stopped
     env_file: .env
     depends_on:
@@ -160,6 +160,41 @@ services:
         condition: service_healthy
     networks:
       - dnarmasid-net
+
+  # Asynq monitoring dashboard (optional, enable when USE_ASYNQ=true)
+  asynqmon:
+    image: hibiken/asynqmon:latest
+    container_name: ${COMPOSE_PROJECT_NAME:-dnarmasid}-asynqmon
+    restart: unless-stopped
+    ports:
+      - "${ASYNQMON_PORT:-8085}:8080"
+    environment:
+      REDIS_ADDR: redis:6379
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - dnarmasid-net
+    profiles:
+      - asynq
+
+  # Asynq worker (Phase 3+: shadow mode by default)
+  asynq-worker:
+    build:
+      context: .
+      dockerfile: services/asynq-worker/Dockerfile
+    container_name: ${COMPOSE_PROJECT_NAME:-dnarmasid}-asynq-worker
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      ASYNQ_SHADOW_MODE: ${ASYNQ_SHADOW_MODE:-true}
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - dnarmasid-net
+    profiles:
+      - asynq
 
 networks:
   dnarmasid-net:
