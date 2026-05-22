@@ -11,6 +11,7 @@ import (
 	internalQueue "dnarmasid/internal/queue"
 	"dnarmasid/internal/tasks"
 	"dnarmasid/shared/config"
+	"dnarmasid/shared/queue"
 )
 
 func main() {
@@ -31,6 +32,9 @@ func main() {
 		log.Println("[asynq-worker] 👻 SHADOW MODE: handlers will log only, no side effects")
 	} else {
 		log.Println("[asynq-worker] 🚀 LIVE MODE: handlers will execute real actions")
+		// Initialize Redis queue for bridge mode
+		handlers.RedisQueue = queue.NewClient(cfg)
+		log.Println("[asynq-worker] Redis bridge initialized for live mode")
 	}
 
 	redisAddr := fmt.Sprintf("%s:%s", cfg.RedisHost, cfg.RedisPort)

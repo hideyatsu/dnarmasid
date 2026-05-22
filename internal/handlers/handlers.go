@@ -3,9 +3,11 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 
 	"dnarmasid/internal/tasks"
+	"dnarmasid/shared/queue"
 
 	"github.com/hibiken/asynq"
 )
@@ -13,9 +15,12 @@ import (
 // ShadowMode controls whether handlers execute or just log
 var ShadowMode = true
 
+// RedisQueue is the Redis client used in bridge mode (Phase 4 lightweight)
+var RedisQueue *queue.Client
+
 // HandleScrape processes scrape tasks
 // In shadow mode: logs what it would do, no side effects
-// In live mode: executes the actual scrape pipeline
+// In live mode: bridge to Redis BRPOP queue (existing scraper service)
 func HandleScrape(ctx context.Context, t *asynq.Task) error {
 	var p tasks.ScrapePayload
 	if err := json.Unmarshal(t.Payload(), &p); err != nil {
@@ -28,9 +33,19 @@ func HandleScrape(ctx context.Context, t *asynq.Task) error {
 		return nil // success, but no action
 	}
 
-	// Live mode — TODO Phase 4
-	log.Printf("[asynq:live] 🚀 SCRAPE task executing: source=%s", p.Source)
-	// return scraper.Run(ctx, p)
+	// Live mode (Phase 4 bridge): forward to Redis BRPOP for existing scraper
+	log.Printf("[asynq:live] 🚀 SCRAPE task: bridging to Redis queue (source=%s)", p.Source)
+	if RedisQueue == nil {
+		return fmt.Errorf("RedisQueue not initialized")
+	}
+	payload := map[string]string{
+		"source":       p.Source + "-asynq",
+		"triggered_at": p.TriggeredAt,
+	}
+	if err := RedisQueue.Publish(queue.KeyJobScrape, payload); err != nil {
+		return fmt.Errorf("bridge to redis: %w", err)
+	}
+	log.Println("[asynq:live] ✅ Bridged to Redis: scraper service will process")
 	return nil
 }
 
