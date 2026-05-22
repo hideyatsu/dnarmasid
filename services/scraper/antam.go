@@ -367,9 +367,9 @@ func (s *AntamScraper) scrapeWithChromedp(defaultDate time.Time) (time.Time, []m
 			}),
 
 			chromedp.WaitVisible(".hero-price", chromedp.ByQuery),
-			chromedp.EmulateViewport(400, 800),
+			chromedp.EmulateViewport(375, 667),
 			chromedp.ActionFunc(func(ctx context.Context) error {
-				// Wait a bit for chart to stabilize
+				// Wait a bit for layout to stabilize at mobile viewport
 				time.Sleep(1 * time.Second)
 				return nil
 			}),
