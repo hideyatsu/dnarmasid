@@ -15,7 +15,7 @@ import (
 // When USE_ASYNQ=true, tasks are enqueued to both systems
 // When USE_ASYNQ=false, only Redis List is used (current behavior)
 type Bridge struct {
-	redisQueue  *RedisClient
+	redisQueue  RedisClient
 	asynqClient *AsynqClient
 	useAsynq    bool
 }
