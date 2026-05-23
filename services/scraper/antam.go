@@ -265,7 +265,7 @@ func (s *AntamScraper) scrapeWithAPI() (time.Time, []models.GoldPrice, string, s
 
 	var prices []models.GoldPrice
 	for _, p := range payload.Data.Prices {
-		if p.Category != "Emas Batangan" {
+		if p.Category != "emas-batangan" {
 			continue
 		}
 
