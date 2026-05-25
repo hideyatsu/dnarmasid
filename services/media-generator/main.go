@@ -52,6 +52,15 @@ func main() {
 
 			log.Printf("[media-generator] 📥 Event received: date=%s", event.Date)
 
+			// Generate CTA image (independent dari infografis utama)
+			var ctaURL string
+			if url, err := generator.GenerateCTAImage(&event); err != nil {
+				log.Printf("[media-generator] ⚠️ CTA generation failed (non-blocking): %v", err)
+			} else {
+				ctaURL = url
+				log.Printf("[media-generator] ✅ CTA image ready: %s", ctaURL)
+			}
+
 			// Generate gambar infografis
 			imgEvent, err := generator.GenerateImage(&event)
 			if err != nil {
@@ -63,7 +72,7 @@ func main() {
 					log.Printf("[media-generator] ✅ Image media.ready published: %s", imgEvent.FileName)
 
 					// Trigger Repliz Uploader Event with Polling for AI Caption
-					go func(priceID uint, date string, imgEvt *models.MediaReadyEvent, screenshotPriceURL string, screenshotBuybackURL string) {
+					go func(priceID uint, date string, imgEvt *models.MediaReadyEvent, screenshotPriceURL string, screenshotBuybackURL string, ctaImageURL string) {
 						var caption string
 						// Poll for max 30 seconds (10 retries * 3s)
 						for i := 0; i < 10; i++ {
@@ -84,6 +93,7 @@ func main() {
 							Date:                 date,
 							Caption:              caption,
 							InfographicURL:       imgEvt.PublicURL,
+							CTAImageURL:          ctaImageURL,
 							ScreenshotPriceURL:   screenshotPriceURL,
 							ScreenshotBuybackURL: screenshotBuybackURL,
 						}
@@ -93,7 +103,7 @@ func main() {
 						} else {
 							log.Printf("[media-generator] ✅ Repliz event published for date %s", date)
 						}
-					}(event.PriceID, event.Date, imgEvent, event.ScreenshotPriceURL, event.ScreenshotBuybackURL)
+					}(event.PriceID, event.Date, imgEvent, event.ScreenshotPriceURL, event.ScreenshotBuybackURL, ctaURL)
 				}
 			}
 

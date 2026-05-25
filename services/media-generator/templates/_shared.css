@@ -1,0 +1,142 @@
+:root {
+    --primary-gold: #B89965;
+    --text-gray-medium: #757575;
+    --text-gray-dark: #404040;
+    --text-black: #1A1A1A;
+    --color-green: #22A042;
+    --color-red: #D93025;
+    --footer-bg: transparent;
+    --footer-text: #1A1A1A;
+    --telegram-blue: #24A1DE;
+}
+
+body, html {
+    margin: 0;
+    padding: 0;
+    font-family: 'Montserrat', sans-serif;
+    width: 1080px;
+    height: 1080px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    background-color: #17181c;
+}
+
+.post-container {
+    width: 1080px;
+    height: 1080px;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    align-items: center;
+    box-sizing: border-box;
+    background: radial-gradient(circle at 30% 30%, #F5E8D3 0%, #E3CFA8 45%, #C2A67A 100%);
+    overflow: hidden;
+}
+
+/* --- ORNAMEN GEOMETRIS BACKGROUND --- */
+.bg-ornament {
+    position: absolute;
+    pointer-events: none;
+    z-index: 0;
+}
+
+.circle-top-right {
+    width: 972px;
+    height: 972px;
+    border: 4px solid rgba(255, 255, 255, 0.2);
+    border-radius: 50%;
+    top: -324px;
+    right: -324px;
+}
+
+.diamond-bottom-left {
+    width: 540px;
+    height: 540px;
+    border: 3px solid rgba(255, 255, 255, 0.25);
+    transform: rotate(45deg);
+    bottom: -172px;
+    left: -216px;
+}
+
+.line-accent {
+    width: 1296px;
+    height: 2px;
+    background: rgba(255, 255, 255, 0.2);
+    transform: rotate(-35deg);
+    top: 324px;
+    right: -216px;
+}
+
+.header, .main-card, .footer, .cta-card {
+    z-index: 1;
+    position: relative;
+}
+
+.header {
+    text-align: center;
+    padding-top: 75px;
+    width: 100%;
+}
+
+.header h1 {
+    color: #7D5A29;
+    font-size: 56px;
+    font-weight: 800;
+    margin: 0;
+    letter-spacing: 2px;
+}
+
+.header .date {
+    color: #5A5A5A;
+    font-size: 34px;
+    font-weight: 600;
+    margin: 12px 0 0;
+}
+
+.footer {
+    background-color: var(--footer-bg);
+    width: 100%;
+    height: 108px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0 86px 38px 86px;
+    box-sizing: border-box;
+}
+
+.footer-left, .footer-right {
+    display: flex;
+    align-items: center;
+}
+
+.instagram-logo {
+    width: 52px;
+    height: 52px;
+    margin-right: 18px;
+    display: flex;
+    align-items: center;
+}
+
+.instagram-handle {
+    color: var(--footer-text);
+    font-size: 32px;
+    font-weight: 800;
+    letter-spacing: 1px;
+}
+
+.telegram-logo {
+    width: 52px;
+    height: 52px;
+    margin-right: 13px;
+    display: flex;
+    align-items: center;
+}
+
+.telegram-link {
+    color: var(--text-black);
+    font-size: 30px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+}

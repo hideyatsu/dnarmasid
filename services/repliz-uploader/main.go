@@ -70,6 +70,16 @@ func main() {
 				})
 			}
 
+			// Image 3: CTA slide (template visual sama dengan halaman pertama, isi CTA)
+			if event.CTAImageURL != "" {
+				medias = append(medias, repliz.Media{
+					Alt:       "Call to Action - DnarMasID",
+					Type:      "image",
+					Thumbnail: event.CTAImageURL,
+					URL:       event.CTAImageURL,
+				})
+			}
+
 			// // Image 3: Scrape screenshot (Buyback)
 			// if event.ScreenshotBuybackURL != "" {
 			// 	medias = append(medias, repliz.Media{
