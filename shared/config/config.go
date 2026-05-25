@@ -48,6 +48,12 @@ type Config struct {
 	// Media
 	MediaOutputPath string
 
+	// CTA Slide
+	CTATitle    string
+	CTAHeadline string
+	CTASubtext  string
+	CTAHandle   string
+
 	// Cloudflare R2
 	R2AccountID    string
 	R2AccessKey    string
@@ -113,6 +119,11 @@ func Load() *Config {
 		ScheduleCronEvening: getEnv("SCHEDULE_CRON_EVENING", "0 18 * * *"),
 
 		MediaOutputPath: getEnv("MEDIA_OUTPUT_PATH", "/app/volumes/media"),
+
+		CTATitle:    getEnv("CTA_TITLE", "DNARMASID"),
+		CTAHeadline: getEnv("CTA_HEADLINE", "INVESTASI EMAS\nMULAI HARI INI"),
+		CTASubtext:  getEnv("CTA_SUBTEXT", "Update harga harian, tips & insight emas\nlangsung di tangan Anda."),
+		CTAHandle:   getEnv("CTA_HANDLE", "t.me/antamdailybot"),
 
 		R2AccountID:    getEnv("R2_ACCOUNT_ID", ""),
 		R2AccessKey:    getEnv("R2_ACCESS_KEY", ""),
