@@ -222,14 +222,15 @@ func (b *Broadcaster) sendText(chatID int64, threadID int, text string) {
 	}
 }
 
-// SendScrapeNotification mengirim notifikasi singkat harga harian
+// SendScrapeNotification mengirim notifikasi singkat harga harian.
+// Broadcast ke #General default (threadID=0) — Telegram tidak butuh thread_id eksplisit.
 func (b *Broadcaster) SendScrapeNotification(event *models.GoldScrapedEvent) error {
 	if b.cfg.TelegramGroupID == 0 {
 		return fmt.Errorf("TELEGRAM_GROUP_ID belum dikonfigurasi")
 	}
 
 	chatID := b.cfg.TelegramGroupID
-	threadID := b.cfg.TelegramThreadGeneralID
+	threadID := 0
 
 	// Cari harga 1 gram
 	var price1g models.GoldPrice
@@ -314,14 +315,15 @@ func (b *Broadcaster) SendScrapeNotification(event *models.GoldScrapedEvent) err
 	return nil
 }
 
-// SendScrapeFailureNotification mengirim notifikasi kegagalan scraping
+// SendScrapeFailureNotification mengirim notifikasi kegagalan scraping.
+// Broadcast ke #General default (threadID=0).
 func (b *Broadcaster) SendScrapeFailureNotification(event *models.ScrapeFailedEvent) error {
 	if b.cfg.TelegramGroupID == 0 {
 		return fmt.Errorf("TELEGRAM_GROUP_ID belum dikonfigurasi")
 	}
 
 	chatID := b.cfg.TelegramGroupID
-	threadID := b.cfg.TelegramThreadGeneralID
+	threadID := 0
 
 	msgText := fmt.Sprintf(
 		"⚠️ <b>Gagal Mengambil Data Harga Emas</b>\n\n"+
