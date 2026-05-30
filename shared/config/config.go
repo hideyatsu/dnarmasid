@@ -62,9 +62,10 @@ type Config struct {
 	R2PublicDomain string
 
 	// Repliz API
-	ReplizAccessKey       string
-	ReplizSecretKey       string
-	ReplizTikTokAccountID string
+	ReplizAccessKey          string
+	ReplizSecretKey          string
+	ReplizTikTokAccountID    string
+	ReplizInstagramAccountID string
 
 	// Asynq
 	UseAsynq         bool
@@ -131,9 +132,10 @@ func Load() *Config {
 		R2BucketName:   getEnv("R2_BUCKET_NAME", ""),
 		R2PublicDomain: getEnv("R2_PUBLIC_DOMAIN", ""),
 
-		ReplizAccessKey:       getEnv("REPLIZ_ACCESS_KEY", ""),
-		ReplizSecretKey:       getEnv("REPLIZ_SECRET_KEY", ""),
-		ReplizTikTokAccountID: getEnv("REPLIZ_TIKTOK_ACCOUNT_ID", ""),
+		ReplizAccessKey:          getEnv("REPLIZ_ACCESS_KEY", ""),
+		ReplizSecretKey:          getEnv("REPLIZ_SECRET_KEY", ""),
+		ReplizTikTokAccountID:    getEnv("REPLIZ_TIKTOK_ACCOUNT_ID", ""),
+		ReplizInstagramAccountID: getEnv("REPLIZ_INSTAGRAM_ACCOUNT_ID", ""),
 
 		UseAsynq:         useAsynq,
 		AsynqConcurrency: asynqConcurrency,
