@@ -39,8 +39,10 @@ type Music struct {
 type AdditionalInfo struct {
 	IsAiGenerated bool     `json:"isAiGenerated"`
 	IsDraft       bool     `json:"isDraft"`
-	Collaborators []string `json:"collaboratos"` // Based on provided payload, note the spelling
+	Collaborators []string `json:"collaborators"`
 	Music         Music    `json:"music"`
+	Products      []string `json:"products,omitempty"`
+	Tags          []string `json:"tags,omitempty"`
 }
 
 // Payload represents the Repliz API request body
