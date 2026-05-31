@@ -74,8 +74,8 @@ func main() {
 					// Trigger Repliz Uploader Event with Polling for AI Caption
 					go func(priceID uint, date string, imgEvt *models.MediaReadyEvent, screenshotPriceURL string, screenshotBuybackURL string, ctaImageURL string) {
 						var caption string
-						// Poll for max 30 seconds (10 retries * 3s)
-						for i := 0; i < 10; i++ {
+						// Poll for max 60 seconds (20 retries * 3s)
+						for i := 0; i < 20; i++ {
 							var content models.GeneratedContent
 							if err := database.Where("price_id = ? AND content_type = ?", priceID, models.ContentCaption).First(&content).Error; err == nil && content.ContentText != "" {
 								caption = content.ContentText

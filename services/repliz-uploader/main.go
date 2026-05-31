@@ -63,7 +63,18 @@ func processEvent(client *repliz.Client, platforms []PlatformTarget, event model
 	// Fallback caption
 	description := event.Caption
 	if description == "" {
-		description = fmt.Sprintf("Update Harga Emas Antam %s. Cek infografis untuk detailnya! #EmasAntam #DnarMasID", event.Date)
+		log.Printf("[repliz-uploader] ⚠️ Caption empty, using enriched fallback for date %s", event.Date)
+		description = fmt.Sprintf(`Harga Emas Antam Hari Ini
+
+Tanggal: %s
+
+Cek infografis untuk detail harga jual dan buyback hari ini.
+
+Pantau terus pergerakan harga emas agar tidak ketinggalan momentum investasi terbaik!
+
+Dapatkan update harga real-time dan alert otomatis lewat bot Telegram kami. Klik link di bio untuk mulai!
+
+#investasiemas #hargaemas #logammulia #emasantam #tipskeuangan`, event.Date)
 	}
 
 	scheduleTime := time.Now().UTC().Add(10 * time.Minute).Format(time.RFC3339)
