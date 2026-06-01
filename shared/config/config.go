@@ -66,6 +66,7 @@ type Config struct {
 	ReplizSecretKey          string
 	ReplizTikTokAccountID    string
 	ReplizInstagramAccountID string
+	ReplizFacebookAccountID  string
 
 	// Asynq
 	UseAsynq         bool
@@ -136,6 +137,7 @@ func Load() *Config {
 		ReplizSecretKey:          getEnv("REPLIZ_SECRET_KEY", ""),
 		ReplizTikTokAccountID:    getEnv("REPLIZ_TIKTOK_ACCOUNT_ID", ""),
 		ReplizInstagramAccountID: getEnv("REPLIZ_INSTAGRAM_ACCOUNT_ID", ""),
+		ReplizFacebookAccountID:  getEnv("REPLIZ_FACEBOOK_ACCOUNT_ID", ""),
 
 		UseAsynq:         useAsynq,
 		AsynqConcurrency: asynqConcurrency,

@@ -39,12 +39,14 @@ func getActivePlatforms(cfg *config.Config) []PlatformTarget {
 		})
 	}
 
-	// Future: Facebook, Threads, etc
-	// if cfg.ReplizFacebookAccountID != "" {
-	//     platforms = append(platforms, PlatformTarget{
-	//         Name: "facebook", AccountID: cfg.ReplizFacebookAccountID, PostType: PostTypeImage,
-	//     })
-	// }
+	// Facebook — single image, same as Instagram
+	if cfg.ReplizFacebookAccountID != "" {
+		platforms = append(platforms, PlatformTarget{
+			Name:      "facebook",
+			AccountID: cfg.ReplizFacebookAccountID,
+			PostType:  PostTypeImage,
+		})
+	}
 
 	return platforms
 }
