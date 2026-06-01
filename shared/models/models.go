@@ -66,11 +66,25 @@ const (
 	ContentAnalysis    ContentType = "analysis"
 )
 
+// ThreadType — kategori konten Threads (rotasi harian anti-ban)
+type ThreadType string
+
+const (
+	ThreadPriceUpdate ThreadType = "price_update"
+	ThreadTip         ThreadType = "tip"
+	ThreadEngagement  ThreadType = "engagement"
+	ThreadFunFact     ThreadType = "fun_fact"
+	ThreadInsight     ThreadType = "insight"
+	ThreadMotivation  ThreadType = "motivation"
+	ThreadWeeklyRecap ThreadType = "weekly_recap"
+)
+
 type GeneratedContent struct {
 	ID          uint        `gorm:"primarykey" json:"id"`
 	PriceID     uint        `json:"price_id"`
 	Platform    Platform    `json:"platform"`
 	ContentType ContentType `json:"content_type"`
+	ThreadType  ThreadType  `json:"thread_type,omitempty"`
 	ContentText string      `gorm:"type:longtext" json:"content_text"`
 	Status      string      `gorm:"default:pending" json:"status"`
 	CreatedAt   time.Time   `json:"created_at"`

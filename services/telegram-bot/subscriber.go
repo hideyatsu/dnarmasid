@@ -1,8 +1,11 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"os"
+	"strconv"
+	"strings"
 
 	"dnarmasid/shared/config"
 	"dnarmasid/shared/models"
@@ -69,6 +72,8 @@ func (h *CommandHandler) handleMessage(msg *tgbotapi.Message) {
 		h.handleHelp(chatID)
 	case "scrape":
 		h.handleScrape(chatID)
+	case "threads":
+		h.handleThreads(chatID, msg.CommandArguments())
 	default:
 		if msg.IsCommand() {
 			h.send(chatID, "❓ Command tidak dikenal. Ketik /help untuk daftar command.")
@@ -151,7 +156,8 @@ func (h *CommandHandler) handleHelp(chatID int64) {
 		"/help — Tampilkan bantuan\n"
 
 	if chatID == h.cfg.TelegramAdminChatID {
-		text += "/scrape — [Admin] Trigger manual scrape\n"
+		text += "/scrape — [Admin] Trigger manual scrape\n" +
+			"/threads — [Admin] Review pending Threads content\n"
 	}
 
 	text += "\n📲 Follow kami: @DnarMasID"
@@ -188,4 +194,73 @@ func (h *CommandHandler) send(chatID int64, text string) {
 	if _, err := h.bot.Send(msg); err != nil {
 		log.Printf("[command-handler] ⚠️ send error: %v", err)
 	}
+}
+
+func (h *CommandHandler) handleThreads(chatID int64, args string) {
+	if chatID != h.cfg.TelegramAdminChatID {
+		h.send(chatID, "❌ Maaf, command ini hanya untuk Admin.")
+		return
+	}
+
+	// If args is a number, show detail
+	if args != "" {
+		num, err := strconv.Atoi(args)
+		if err == nil {
+			h.handleThreadsDetail(chatID, num)
+			return
+		}
+	}
+
+	// List pending threads
+	var contents []models.GeneratedContent
+	h.db.Where("platform = ? AND status = ?", models.PlatformThreads, "pending").
+		Order("created_at DESC").
+		Limit(10).
+		Find(&contents)
+
+	if len(contents) == 0 {
+		h.send(chatID, "🧵 Belum ada konten Threads pending.")
+		return
+	}
+
+	var sb strings.Builder
+	sb.WriteString("🧵 *Konten Threads Pending:*\n\n")
+
+	for i, c := range contents {
+		date := c.CreatedAt.Format("02 Jan")
+		preview := c.ContentText
+		runes := []rune(preview)
+		if len(runes) > 60 {
+			preview = string(runes[:60]) + "..."
+		}
+		sb.WriteString(fmt.Sprintf("%d. [%s] *%s*\n   %s\n\n", i+1, date, c.ThreadType, preview))
+	}
+
+	sb.WriteString("Ketik `/threads <nomor>` untuk lihat full konten.")
+
+	msg := tgbotapi.NewMessage(chatID, sb.String())
+	msg.ParseMode = "Markdown"
+	h.bot.Send(msg)
+}
+
+func (h *CommandHandler) handleThreadsDetail(chatID int64, num int) {
+	var contents []models.GeneratedContent
+	h.db.Where("platform = ? AND status = ?", models.PlatformThreads, "pending").
+		Order("created_at DESC").
+		Limit(10).
+		Find(&contents)
+
+	if num < 1 || num > len(contents) {
+		h.send(chatID, "❌ Nomor tidak valid.")
+		return
+	}
+
+	c := contents[num-1]
+	text := fmt.Sprintf("🧵 *Threads [%s]* — %s\n\n%s\n\n---\nStatus: %s | Created: %s",
+		c.ThreadType, c.CreatedAt.Format("02 Jan 2006 15:04"),
+		c.ContentText, c.Status, c.CreatedAt.Format("02 Jan 2006"))
+
+	msg := tgbotapi.NewMessage(chatID, text)
+	msg.ParseMode = "Markdown"
+	h.bot.Send(msg)
 }

@@ -29,12 +29,9 @@ func main() {
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 
-	for {
-		select {
-		case <-quit:
-			log.Println("[ai-generator] Shutting down...")
-			return
-		default:
+	// Consumer 1: General caption (existing)
+	go func() {
+		for {
 			var event models.GoldScrapedEvent
 			err := q.ConsumeJSON(queue.KeyGoldScrapedAI, 5*time.Second, &event)
 			if err != nil {
@@ -56,5 +53,28 @@ func main() {
 
 			log.Printf("[ai-generator] ✅ content.ready published for %s", event.Date)
 		}
-	}
+	}()
+
+	// Consumer 2: Threads content (new)
+	go func() {
+		log.Printf("[ai-generator] 🧵 Ready. Waiting for %s events...", queue.KeyGoldScrapedThreads)
+		for {
+			var event models.GoldScrapedEvent
+			err := q.ConsumeJSON(queue.KeyGoldScrapedThreads, 5*time.Second, &event)
+			if err != nil {
+				continue
+			}
+
+			log.Printf("[ai-generator] 🧵 Threads event received: date=%s trend=%s", event.Date, event.Trend)
+
+			if err := generator.GenerateThreads(&event); err != nil {
+				log.Printf("[ai-generator] ❌ Threads generate failed: %v", err)
+				continue
+			}
+		}
+	}()
+
+	// Block until shutdown signal
+	<-quit
+	log.Println("[ai-generator] Shutting down...")
 }
