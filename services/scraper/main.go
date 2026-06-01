@@ -163,6 +163,9 @@ func main() {
 			if err := q.Publish(queue.KeyGoldScrapedBot, event); err != nil {
 				log.Printf("[scraper] ❌ Failed to publish to telegram: %v", err)
 			}
+			if err := q.Publish(queue.KeyGoldScrapedThreads, event); err != nil {
+				log.Printf("[scraper] ❌ Failed to publish to threads: %v", err)
+			}
 
 			log.Printf("[scraper] ✅ gold.scraped published | Date: %s | Trend: %s | Change: %+.2f%%",
 				event.Date, event.Trend, event.ChangePct)
