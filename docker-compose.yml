@@ -148,13 +148,9 @@ services:
     networks:
       - dnarmasid-net
 
-  repliz-uploader:
-    build:
-      context: .
-      dockerfile: services/repliz-uploader/Dockerfile
-    container_name: ${COMPOSE_PROJECT_NAME:-dnarmasid}-repliz-uploader
-    restart: unless-stopped
     env_file: .env
+    environment:
+      REPLIZ_FACEBOOK_ACCOUNT_ID: 69ce93c0fcfb33df528b2bb9
     depends_on:
       redis:
         condition: service_healthy
