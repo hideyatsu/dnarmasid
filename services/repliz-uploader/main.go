@@ -106,17 +106,19 @@ Dapatkan update harga real-time dan alert otomatis lewat bot Telegram kami. Klik
 			Medias:      medias,
 			Meta:        repliz.Meta{},
 			AdditionalInfo: repliz.AdditionalInfo{
-				IsAiGenerated: true,
+				IsAiGenerated: false,
 				IsDraft:       false,
 				Collaborators: []string{},
 				Music: repliz.Music{
-					ID:        "7637201849280711442",
-					Artist:    "DnarMasID",
-					Name:      "original sound - DnarMasID",
+					ID:        "",
+					Artist:    "",
+					Name:      "",
 					Thumbnail: "",
 				},
 				Products: []string{},
 				Tags:     []string{},
+				Mentions: []string{},
+				Link:     "",
 			},
 			Replies:    []string{},
 			AccountID:  p.AccountID,
@@ -134,7 +136,7 @@ Dapatkan update harga real-time dan alert otomatis lewat bot Telegram kami. Klik
 
 // buildAlbumMedias builds multi-image media array (TikTok carousel)
 func buildAlbumMedias(event models.MediaGenerationCompletedEvent) []repliz.Media {
-	var medias []repliz.Media
+	medias := make([]repliz.Media, 0)
 
 	if event.InfographicURL != "" {
 		medias = append(medias, repliz.Media{
