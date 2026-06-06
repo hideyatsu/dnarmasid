@@ -21,8 +21,14 @@ func main() {
 	q := queue.NewClient(cfg)
 	client := repliz.NewClient(cfg)
 
-	if cfg.ReplizTikTokAccountID == "" {
-		log.Println("[repliz-uploader] ⚠️ Warning: REPLIZ_TIKTOK_ACCOUNT_ID is not configured")
+	// Log active platforms
+	platforms := getActivePlatforms(cfg)
+	if len(platforms) == 0 {
+		log.Println("[repliz-uploader] ⚠️ Warning: No platform account IDs configured")
+	} else {
+		for _, p := range platforms {
+			log.Printf("[repliz-uploader] 📱 Platform active: %s (type=%s)", p.Name, p.PostType)
+		}
 	}
 
 	log.Println("[repliz-uploader] ✅ Ready. Waiting for media.generation.completed events...")
@@ -43,83 +49,140 @@ func main() {
 			}
 
 			log.Printf("[repliz-uploader] 📥 Event received for date: %s", event.Date)
-
-			// Map dynamic data to Repliz API Payload
-			scheduleTime := time.Now().UTC().Add(10 * time.Minute).Format(time.RFC3339)
-
-			medias := []repliz.Media{}
-
-			// Image 1: Infographic (pertama dalam album — tidak bisa custom thumbnail)
-			if event.InfographicURL != "" {
-				medias = append(medias, repliz.Media{
-					Alt:             "Infografis Harga Emas",
-					Type:            "image",
-					Thumbnail:       event.InfographicURL,
-					URL:             event.InfographicURL,
-					CustomThumbnail: false,
-				})
-			}
-
-			// Image 2: Scrape screenshot (Price)
-			if event.ScreenshotPriceURL != "" {
-				medias = append(medias, repliz.Media{
-					Alt:       "Screenshot Harga Emas",
-					Type:      "image",
-					Thumbnail: event.ScreenshotPriceURL,
-					URL:       event.ScreenshotPriceURL,
-				})
-			}
-
-			// // Image 3: Scrape screenshot (Buyback)
-			// if event.ScreenshotBuybackURL != "" {
-			// 	medias = append(medias, repliz.Media{
-			// 		Alt:       "Screenshot Buyback Emas",
-			// 		Type:      "image",
-			// 		Thumbnail: event.ScreenshotBuybackURL,
-			// 		URL:       event.ScreenshotBuybackURL,
-			// 	})
-			// }
-
-			// Fallback description if AI caption is missing
-			description := event.Caption
-			if description == "" {
-				description = fmt.Sprintf("Update Harga Emas Antam %s. Cek infografis untuk detailnya! #EmasAntam #DnarMasID", event.Date)
-			}
-
-			payload := repliz.Payload{
-				Title:       fmt.Sprintf("Update Harga Emas Antam - %s", event.Date),
-				Description: description,
-				Topic:       "antamlogammulia",
-				Type:        "album",
-				Medias:      medias,
-				Meta: repliz.Meta{
-					Title:       "",
-					Description: "",
-					URL:         "",
-				},
-				AdditionalInfo: repliz.AdditionalInfo{
-					IsAiGenerated: true,
-					IsDraft:       false,
-					Collaborators: []string{},
-					Music: repliz.Music{
-						ID:        "7637201849280711442",
-						Artist:    "DnarMasID",
-						Name:      "original sound - DnarMasID",
-						Thumbnail: "",
-					},
-				},
-				Replies:    []string{},
-				AccountID:  cfg.ReplizTikTokAccountID,
-				ScheduleAt: scheduleTime,
-			}
-
-			// Call Repliz API
-			err = client.UploadPost(payload)
-			if err != nil {
-				log.Printf("[repliz-uploader] ❌ Failed to upload post to Repliz: %v", err)
-			} else {
-				log.Printf("[repliz-uploader] ✅ Successfully scheduled post to Repliz for date %s (Scheduled at: %s)", event.Date, scheduleTime)
-			}
+			processEvent(client, platforms, event)
 		}
 	}
+}
+
+func processEvent(client *repliz.Client, platforms []PlatformTarget, event models.MediaGenerationCompletedEvent) {
+	if len(platforms) == 0 {
+		log.Println("[repliz-uploader] ⚠️ No platforms configured, skipping")
+		return
+	}
+
+	// Fallback caption
+	description := event.Caption
+	if description == "" {
+		log.Printf("[repliz-uploader] ⚠️ Caption empty, using enriched fallback for date %s", event.Date)
+		description = fmt.Sprintf(`Harga Emas Antam Hari Ini
+
+Tanggal: %s
+
+Cek infografis untuk detail harga jual dan buyback hari ini.
+
+Pantau terus pergerakan harga emas agar tidak ketinggalan momentum investasi terbaik!
+
+Dapatkan update harga real-time dan alert otomatis lewat bot Telegram kami. Klik link di bio untuk mulai!
+
+#investasiemas #hargaemas #logammulia #emasantam #tipskeuangan`, event.Date)
+	}
+
+	scheduleTime := time.Now().UTC().Add(10 * time.Minute).Format(time.RFC3339)
+
+	for _, p := range platforms {
+		var medias []repliz.Media
+		var postType string
+		var title string
+
+		switch p.PostType {
+		case PostTypeAlbum:
+			// Album: infografis + screenshot + CTA
+			postType = "album"
+			title = fmt.Sprintf("Update Harga Emas Antam - %s", event.Date)
+			medias = buildAlbumMedias(event)
+
+		case PostTypeImage:
+			// Single image: infografis only
+			postType = "image"
+			title = ""
+			medias = buildSingleImageMedias(event)
+		}
+
+		payload := repliz.Payload{
+			Title:       title,
+			Description: description,
+			Topic:       "antamlogammulia",
+			Type:        postType,
+			Medias:      medias,
+			Meta:        repliz.Meta{},
+			AdditionalInfo: repliz.AdditionalInfo{
+				IsAiGenerated: false,
+				IsDraft:       false,
+				Collaborators: []string{},
+				Music: repliz.Music{
+					ID:        "",
+					Artist:    "",
+					Name:      "",
+					Thumbnail: "",
+				},
+				Products: []string{},
+				Tags:     []string{},
+				Mentions: []string{},
+				Link:     "",
+			},
+			Replies:    []string{},
+			AccountID:  p.AccountID,
+			ScheduleAt: scheduleTime,
+		}
+
+		err := client.UploadPost(payload)
+		if err != nil {
+			log.Printf("[repliz-uploader] ❌ %s upload failed: %v", p.Name, err)
+		} else {
+			log.Printf("[repliz-uploader] ✅ %s (%s) scheduled for %s at %s", p.Name, p.PostType, event.Date, scheduleTime)
+		}
+	}
+}
+
+// buildAlbumMedias builds multi-image media array (TikTok carousel)
+func buildAlbumMedias(event models.MediaGenerationCompletedEvent) []repliz.Media {
+	medias := make([]repliz.Media, 0)
+
+	if event.InfographicURL != "" {
+		medias = append(medias, repliz.Media{
+			Alt:             "Infografis Harga Emas",
+			Type:            "image",
+			Thumbnail:       event.InfographicURL,
+			URL:             event.InfographicURL,
+			CustomThumbnail: false,
+		})
+	}
+
+	if event.ScreenshotPriceURL != "" {
+		medias = append(medias, repliz.Media{
+			Alt:       "Screenshot Harga Emas",
+			Type:      "image",
+			Thumbnail: event.ScreenshotPriceURL,
+			URL:       event.ScreenshotPriceURL,
+		})
+	}
+
+	if event.CTAImageURL != "" {
+		medias = append(medias, repliz.Media{
+			Alt:       "Call to Action - DnarMasID",
+			Type:      "image",
+			Thumbnail: event.CTAImageURL,
+			URL:       event.CTAImageURL,
+		})
+	}
+
+	return medias
+}
+
+// buildSingleImageMedias builds single-image media array (Instagram/Facebook)
+func buildSingleImageMedias(event models.MediaGenerationCompletedEvent) []repliz.Media {
+	var medias []repliz.Media
+
+	// Single image: infografis only
+	if event.InfographicURL != "" {
+		medias = append(medias, repliz.Media{
+			Alt:             "",
+			Type:            "image",
+			Thumbnail:       event.InfographicURL,
+			URL:             event.InfographicURL,
+			CustomThumbnail: false,
+		})
+	}
+
+	return medias
 }

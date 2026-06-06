@@ -7,6 +7,7 @@ RUN apk add --no-cache git ca-certificates
 RUN go mod download
 
 COPY shared/ ./shared/
+COPY internal/ ./internal/
 COPY services/storage/ ./services/storage/
 COPY services/media-generator/ ./services/media-generator/
 

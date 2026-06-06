@@ -14,10 +14,10 @@ import (
 // Media represents a single media item in the Repliz payload
 type Media struct {
 	Alt             string `json:"alt"`
+	CustomThumbnail bool   `json:"customThumbnail"`
 	Type            string `json:"type"`
 	Thumbnail       string `json:"thumbnail"`
 	URL             string `json:"url"`
-	CustomThumbnail bool   `json:"customThumbnail,omitempty"`
 }
 
 // Meta represents metadata for the post
@@ -39,8 +39,12 @@ type Music struct {
 type AdditionalInfo struct {
 	IsAiGenerated bool     `json:"isAiGenerated"`
 	IsDraft       bool     `json:"isDraft"`
-	Collaborators []string `json:"collaboratos"` // Based on provided payload, note the spelling
+	Collaborators []string `json:"collaborators"`
 	Music         Music    `json:"music"`
+	Products      []string `json:"products"`
+	Tags          []string `json:"tags"`
+	Mentions      []string `json:"mentions"`
+	Link          string   `json:"link"`
 }
 
 // Payload represents the Repliz API request body

@@ -198,3 +198,109 @@ func (g *MediaGenerator) GenerateImage(event *models.GoldScrapedEvent) (*models.
 	}, nil
 }
 
+// GenerateCTAImage membuat gambar CTA slide menggunakan ctaTemplate.html
+func (g *MediaGenerator) GenerateCTAImage(event *models.GoldScrapedEvent) (string, error) {
+	// Temukan path template
+	templatePath := filepath.Join("templates", "ctaTemplate.html")
+	if _, err := os.Stat(templatePath); os.IsNotExist(err) {
+		templatePath = filepath.Join("services", "media-generator", "templates", "ctaTemplate.html")
+	}
+
+	htmlContent, err := os.ReadFile(templatePath)
+	if err != nil {
+		return "", fmt.Errorf("failed to read CTA template %s: %w", templatePath, err)
+	}
+	htmlStr := string(htmlContent)
+
+	// Substitusi placeholder CTA
+	replacements := map[string]string{
+		"{{title}}":        g.cfg.CTATitle,
+		"{{date}}":         formatDate(event.Date),
+		"{{cta_headline}}": g.cfg.CTAHeadline,
+		"{{cta_subtext}}":  g.cfg.CTASubtext,
+		"{{cta_handle}}":   g.cfg.CTAHandle,
+	}
+
+	for k, v := range replacements {
+		htmlStr = strings.ReplaceAll(htmlStr, k, v)
+	}
+
+	// Tulis temp HTML
+	if err := os.MkdirAll(g.cfg.MediaOutputPath, 0755); err != nil {
+		return "", fmt.Errorf("failed creating output dir: %w", err)
+	}
+	tempHtmlPath := filepath.Join(g.cfg.MediaOutputPath, fmt.Sprintf("temp_cta_%s.html", event.Date))
+	if err := os.WriteFile(tempHtmlPath, []byte(htmlStr), 0644); err != nil {
+		return "", fmt.Errorf("failed to write CTA html: %w", err)
+	}
+	defer os.Remove(tempHtmlPath)
+
+	absHtmlPath, _ := filepath.Abs(tempHtmlPath)
+	fileURL := "file://" + absHtmlPath
+
+	fileName := fmt.Sprintf("cta_%s.jpeg", event.Date)
+	filePath := filepath.Join(g.cfg.MediaOutputPath, fileName)
+
+	// Chromedp render
+	opts := append(chromedp.DefaultExecAllocatorOptions[:],
+		chromedp.Flag("no-sandbox", true),
+		chromedp.Flag("disable-setuid-sandbox", true),
+		chromedp.Flag("disable-dev-shm-usage", true),
+		chromedp.Flag("binary", "/usr/bin/chromium-browser"),
+		chromedp.Flag("extra-chromium-args", "--headless=new --disable-gpu"),
+	)
+	allocCtx, allocCancel := chromedp.NewExecAllocator(context.Background(), opts...)
+	defer allocCancel()
+
+	ctx, cancel := chromedp.NewContext(allocCtx)
+	defer cancel()
+
+	ctx, cancel = context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	var buf []byte
+	err = chromedp.Run(ctx,
+		chromedp.EmulateViewport(1080, 1080),
+		chromedp.Navigate(fileURL),
+		chromedp.WaitVisible("body", chromedp.ByQuery),
+		chromedp.Sleep(2*time.Second),
+		chromedp.CaptureScreenshot(&buf),
+	)
+	if err != nil {
+		return "", fmt.Errorf("chromedp CTA capture error: %w", err)
+	}
+
+	jpegBuf, err := utils.ConvertPNGToJPEG(buf)
+	if err != nil {
+		return "", fmt.Errorf("failed converting CTA png to jpeg: %w", err)
+	}
+
+	if err := os.WriteFile(filePath, jpegBuf, 0644); err != nil {
+		return "", fmt.Errorf("failed exporting CTA jpeg: %w", err)
+	}
+
+	log.Printf("[media-generator] 🖼️ CTA image saved: %s", filePath)
+
+	// Upload ke R2
+	var publicURL string
+	if g.storage != nil {
+		content, err := os.ReadFile(filePath)
+		if err == nil {
+			url, err := g.storage.UploadFile(context.Background(), fileName, content, "image/jpeg")
+			if err != nil {
+				log.Printf("[media-generator] ❌ R2 CTA upload failed: %v", err)
+			} else {
+				log.Printf("[media-generator] ☁️ CTA uploaded to R2: %s", url)
+				publicURL = url
+				os.Remove(filePath)
+			}
+		}
+	}
+
+	if publicURL == "" {
+		publicURL = filePath
+	}
+
+	return publicURL, nil
+}
+

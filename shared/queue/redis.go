@@ -23,6 +23,7 @@ const (
 	KeyMediaReady               = "media.ready"                // media-generator → telegram-bot
 	KeyScrapeFailed             = "scrape.failed"              // scraper → telegram-bot
 	KeyMediaGenerationCompleted = "media.generation.completed" // media-generator → repliz-uploader
+	KeyGoldScrapedThreads       = "gold.scraped.threads"       // scraper → ai-generator (threads)
 )
 
 type Client struct {

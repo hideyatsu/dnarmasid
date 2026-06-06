@@ -7,21 +7,18 @@ COPY go.mod go.sum ./
 RUN apk add --no-cache git
 RUN go mod download
 
-# Copy shared & service source
+# Copy shared, internal & service source
 COPY shared/ ./shared/
 COPY internal/ ./internal/
-COPY services/scheduler/ ./services/scheduler/
+COPY services/asynq-worker/ ./services/asynq-worker/
 
 # Build binary
-RUN go mod tidy && CGO_ENABLED=0 GOOS=linux go build -o /bin/scheduler ./services/scheduler
+RUN go mod tidy && CGO_ENABLED=0 GOOS=linux go build -o /bin/asynq-worker ./services/asynq-worker
 
 # ─────────────────────────────────────────
 FROM alpine:3.19
 
 RUN apk --no-cache add ca-certificates tzdata
+COPY --from=builder /bin/asynq-worker /bin/asynq-worker
 
-WORKDIR /app
-
-COPY --from=builder /bin/scheduler .
-
-CMD ["./scheduler"]
+CMD ["/bin/asynq-worker"]

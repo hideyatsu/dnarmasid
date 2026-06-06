@@ -2,14 +2,17 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 
+	"dnarmasid/services/scraper/chrome"
 	"dnarmasid/services/storage"
 	"dnarmasid/shared/config"
 	"dnarmasid/shared/models"
@@ -26,10 +29,11 @@ type AntamScraper struct {
 	cfg     *config.Config
 	db      *gorm.DB
 	storage storage.StorageService
+	chrome  *chrome.Manager
 }
 
-func NewAntamScraper(cfg *config.Config, db *gorm.DB, storage storage.StorageService) *AntamScraper {
-	return &AntamScraper{cfg: cfg, db: db, storage: storage}
+func NewAntamScraper(cfg *config.Config, db *gorm.DB, storage storage.StorageService, chromeManager *chrome.Manager) *AntamScraper {
+	return &AntamScraper{cfg: cfg, db: db, storage: storage, chrome: chromeManager}
 }
 
 // Run menjalankan scraping dan return GoldScrapedEvent
@@ -43,8 +47,23 @@ func (s *AntamScraper) Run(forceDummy bool) (*models.GoldScrapedEvent, error) {
 	loc, _ := time.LoadLocation("Asia/Jakarta")
 	today := time.Now().In(loc).Truncate(24 * time.Hour)
 
-	// 1. Jalankan scraping menggunakan chromedp (bypass anti-bot)
-	updateTime, prices, screenshotPrice, screenshotBuyback, err := s.scrapeWithChromedp(today)
+	// 1. Jalankan scraping menggunakan chromedp (bypass anti-bot) atau API eksternal
+	var updateTime time.Time
+	var prices []models.GoldPrice
+	var screenshotPrice, screenshotBuyback string
+	var err error
+
+	if s.cfg.ScraperAPIURL != "" {
+		log.Printf("[scraper] 🌐 Menggunakan API Eksternal: %s", s.cfg.ScraperAPIURL)
+		updateTime, prices, screenshotPrice, screenshotBuyback, err = s.scrapeWithAPI()
+		if err != nil {
+			log.Printf("[scraper] ⚠️ API Eksternal gagal: %v. Fallback ke scrape mandiri...", err)
+			updateTime, prices, screenshotPrice, screenshotBuyback, err = s.scrapeWithChromedp(today)
+		}
+	} else {
+		updateTime, prices, screenshotPrice, screenshotBuyback, err = s.scrapeWithChromedp(today)
+	}
+
 	if err != nil {
 		return nil, fmt.Errorf("scrape error: %w", err)
 	}
@@ -57,7 +76,7 @@ func (s *AntamScraper) Run(forceDummy bool) (*models.GoldScrapedEvent, error) {
 	var latestRecord models.GoldPrice
 	result := s.db.Where("gram = 1").Order("source_update_time desc").First(&latestRecord)
 	if result.Error == nil && latestRecord.SourceUpdateTime != nil && latestRecord.SourceUpdateTime.Equal(updateTime) {
-		log.Printf("[scraper] ℹ️ Jam update sama (%v). Skip pipeline.", updateTime.Format("15:04:05"))
+		log.Printf("[scraper] ℹ️ Waktu update sama (%v). Skip pipeline.", updateTime.Format("02 Jan 2006 15:04:05"))
 		return nil, fmt.Errorf("no update since last scrape")
 	}
 
@@ -166,6 +185,105 @@ func (s *AntamScraper) runDummy() (*models.GoldScrapedEvent, error) {
 	return event, nil
 }
 
+func (s *AntamScraper) scrapeWithAPI() (time.Time, []models.GoldPrice, string, string, error) {
+	apiURL := fmt.Sprintf("%s/api/v1/prices/list?source=logammulia&brand=antam", strings.TrimSuffix(s.cfg.ScraperAPIURL, "/"))
+	req, err := http.NewRequest("GET", apiURL, nil)
+	if err != nil {
+		return time.Time{}, nil, "", "", fmt.Errorf("failed to create API request: %w", err)
+	}
+
+	if s.cfg.ScraperAPIKey != "" {
+		req.Header.Set("X-API-KEY", s.cfg.ScraperAPIKey)
+	}
+
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return time.Time{}, nil, "", "", fmt.Errorf("API request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return time.Time{}, nil, "", "", fmt.Errorf("API returned non-200 status: %d", resp.StatusCode)
+	}
+
+	var payload struct {
+		Status string `json:"status"`
+		Data   struct {
+			Prices []struct {
+				Category  string  `json:"category"`
+				Weight    float64 `json:"weight"`
+				BasePrice int64   `json:"base_price"`
+			} `json:"prices"`
+			Buybacks []struct {
+				Weight float64 `json:"weight"`
+				Price  int64   `json:"price"`
+			} `json:"buybacks"`
+			Screenshots []struct {
+				Type          string `json:"type"`
+				ScreenshotURL string `json:"screenshot_url"`
+			} `json:"screenshots"`
+		} `json:"data"`
+		Metadata struct {
+			SiteUpdateAt string `json:"site_update_at"`
+		} `json:"metadata"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		return time.Time{}, nil, "", "", fmt.Errorf("failed to decode API response: %w", err)
+	}
+
+	if payload.Status != "success" {
+		return time.Time{}, nil, "", "", fmt.Errorf("API returned non-success status: %s", payload.Status)
+	}
+
+	updateTime, err := time.Parse(time.RFC3339, payload.Metadata.SiteUpdateAt)
+	if err != nil {
+		loc, _ := time.LoadLocation("Asia/Jakarta")
+		updateTime = time.Now().In(loc)
+	}
+
+	var buybackSellPrice int64
+	for _, bb := range payload.Data.Buybacks {
+		if bb.Weight == 1 {
+			buybackSellPrice = bb.Price
+			break
+		}
+	}
+
+	var screenshotPrice, screenshotBuyback string
+	for _, ss := range payload.Data.Screenshots {
+		if ss.Type == "price-update" && screenshotPrice == "" {
+			screenshotPrice = ss.ScreenshotURL
+		} else if ss.Type == "buyback-update" && screenshotBuyback == "" {
+			screenshotBuyback = ss.ScreenshotURL
+		}
+		if screenshotPrice != "" && screenshotBuyback != "" {
+			break
+		}
+	}
+
+	var prices []models.GoldPrice
+	for _, p := range payload.Data.Prices {
+		if p.Category != "emas-batangan" {
+			continue
+		}
+
+		sellPrice := int64(p.Weight * float64(buybackSellPrice))
+
+		prices = append(prices, models.GoldPrice{
+			Date:             updateTime.Truncate(24 * time.Hour),
+			Gram:             p.Weight,
+			BuyPrice:         p.BasePrice,
+			SellPrice:        sellPrice,
+			SourceURL:        s.cfg.ScraperAPIURL,
+			SourceUpdateTime: &updateTime,
+		})
+	}
+
+	return updateTime, prices, screenshotPrice, screenshotBuyback, nil
+}
+
 // scrapeWithChromedp uses chromedp headless browser to bypass anti-bot protection
 func (s *AntamScraper) scrapeWithChromedp(defaultDate time.Time) (time.Time, []models.GoldPrice, string, string, error) {
 	chromeTimeout := time.Duration(s.cfg.ScrapeTimeoutSeconds*5+120) * time.Second
@@ -176,24 +294,24 @@ func (s *AntamScraper) scrapeWithChromedp(defaultDate time.Time) (time.Time, []m
 		chromePath = "/usr/bin/google-chrome"
 	}
 
-	allocOpts := append(chromedp.DefaultExecAllocatorOptions[:],
-		chromedp.ExecPath(chromePath),
-		chromedp.Flag("headless", true),
-		chromedp.Flag("no-sandbox", true),
-		chromedp.Flag("disable-dev-shm-usage", true),
-		chromedp.Flag("disable-gpu", true),
-		chromedp.Flag("disable-software-rasterizer", true),
-		chromedp.Flag("disable-extensions", true),
-		chromedp.Flag("disable-background-networking", true),
-		chromedp.Flag("disable-sync", true),
-		chromedp.Flag("disable-translate", true),
-		chromedp.Flag("no-first-run", true),
-		chromedp.Flag("disable-setuid-sandbox", true),
-		chromedp.UserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"),
-	)
+	port, err := s.chrome.GetFreePort()
+	if err != nil {
+		return defaultDate, nil, "", "", fmt.Errorf("failed to get free port: %w", err)
+	}
 
-	allocCtx, allocCancel := chromedp.NewExecAllocator(context.Background(), allocOpts...)
+	// Spawn Chrome using our manager
+	cmd, err := s.chrome.Spawn(context.Background(), chromePath, port)
+	if err != nil {
+		return defaultDate, nil, "", "", fmt.Errorf("failed to spawn chrome: %w", err)
+	}
+
+	// Create remote allocator to connect to our spawned chrome
+	allocCtx, allocCancel := chromedp.NewRemoteAllocator(context.Background(), fmt.Sprintf("ws://127.0.0.1:%d", port))
 	defer allocCancel()
+
+	// We don't need to defer cmd.Wait() here because main.go calls chromeManager.Cleanup()
+	// which will kill and reap the process. But we can do it here for extra safety.
+	defer s.chrome.CleanupOne(cmd)
 
 	// Parallel scraping using errgroup
 	g, ctx := errgroup.WithContext(allocCtx)
@@ -249,9 +367,9 @@ func (s *AntamScraper) scrapeWithChromedp(defaultDate time.Time) (time.Time, []m
 			}),
 
 			chromedp.WaitVisible(".hero-price", chromedp.ByQuery),
-			chromedp.EmulateViewport(400, 800),
+			chromedp.EmulateViewport(375, 667),
 			chromedp.ActionFunc(func(ctx context.Context) error {
-				// Wait a bit for chart to stabilize
+				// Wait a bit for layout to stabilize at mobile viewport
 				time.Sleep(1 * time.Second)
 				return nil
 			}),

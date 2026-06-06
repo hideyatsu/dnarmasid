@@ -38,6 +38,8 @@ type Config struct {
 	// Scraper
 	AntamURL             string
 	ScrapeTimeoutSeconds int
+	ScraperAPIURL        string
+	ScraperAPIKey        string
 
 	// Scheduler
 	ScheduleCron        string
@@ -45,6 +47,12 @@ type Config struct {
 
 	// Media
 	MediaOutputPath string
+
+	// CTA Slide
+	CTATitle    string
+	CTAHeadline string
+	CTASubtext  string
+	CTAHandle   string
 
 	// Cloudflare R2
 	R2AccountID    string
@@ -54,9 +62,16 @@ type Config struct {
 	R2PublicDomain string
 
 	// Repliz API
-	ReplizAccessKey       string
-	ReplizSecretKey       string
-	ReplizTikTokAccountID string
+	ReplizAccessKey          string
+	ReplizSecretKey          string
+	ReplizTikTokAccountID    string
+	ReplizInstagramAccountID string
+	ReplizFacebookAccountID  string
+
+	// Asynq
+	UseAsynq         bool
+	AsynqConcurrency int
+	AsynqRetryMax    int
 }
 
 // Load membaca .env dan return Config
@@ -70,6 +85,9 @@ func Load() *Config {
 	threadGeneral, _ := strconv.Atoi(getEnv("TELEGRAM_THREAD_GENERAL_ID", "0"))
 	threadPost, _ := strconv.Atoi(getEnv("TELEGRAM_THREAD_POST_ID", "0"))
 	scrapeTimeout, _ := strconv.Atoi(getEnv("SCRAPE_TIMEOUT_SECONDS", "30"))
+	useAsynq, _ := strconv.ParseBool(getEnv("USE_ASYNQ", "false"))
+	asynqConcurrency, _ := strconv.Atoi(getEnv("ASYNQ_CONCURRENCY", "10"))
+	asynqRetryMax, _ := strconv.Atoi(getEnv("ASYNQ_RETRY_MAX", "3"))
 
 	return &Config{
 		MySQLHost:     getEnv("MYSQL_HOST", "mysql"),
@@ -96,11 +114,18 @@ func Load() *Config {
 
 		AntamURL:             getEnv("ANTAM_URL", "https://www.logammulia.com/id/harga-emas-hari-ini"),
 		ScrapeTimeoutSeconds: scrapeTimeout,
+		ScraperAPIURL:        getEnv("SCRAPER_API_URL", ""),
+		ScraperAPIKey:        getEnv("SCRAPER_API_KEY", ""),
 
 		ScheduleCron:        getEnv("SCHEDULE_CRON", "0 9 * * *"),
 		ScheduleCronEvening: getEnv("SCHEDULE_CRON_EVENING", "0 18 * * *"),
 
 		MediaOutputPath: getEnv("MEDIA_OUTPUT_PATH", "/app/volumes/media"),
+
+		CTATitle:    getEnv("CTA_TITLE", "DNARMASID"),
+		CTAHeadline: getEnv("CTA_HEADLINE", "INVESTASI EMAS\nMULAI HARI INI"),
+		CTASubtext:  getEnv("CTA_SUBTEXT", "Update harga harian, tips & insight emas\nlangsung di tangan Anda."),
+		CTAHandle:   getEnv("CTA_HANDLE", "@dnarmasid"),
 
 		R2AccountID:    getEnv("R2_ACCOUNT_ID", ""),
 		R2AccessKey:    getEnv("R2_ACCESS_KEY", ""),
@@ -108,9 +133,15 @@ func Load() *Config {
 		R2BucketName:   getEnv("R2_BUCKET_NAME", ""),
 		R2PublicDomain: getEnv("R2_PUBLIC_DOMAIN", ""),
 
-		ReplizAccessKey:       getEnv("REPLIZ_ACCESS_KEY", ""),
-		ReplizSecretKey:       getEnv("REPLIZ_SECRET_KEY", ""),
-		ReplizTikTokAccountID: getEnv("REPLIZ_TIKTOK_ACCOUNT_ID", ""),
+		ReplizAccessKey:          getEnv("REPLIZ_ACCESS_KEY", ""),
+		ReplizSecretKey:          getEnv("REPLIZ_SECRET_KEY", ""),
+		ReplizTikTokAccountID:    getEnv("REPLIZ_TIKTOK_ACCOUNT_ID", ""),
+		ReplizInstagramAccountID: getEnv("REPLIZ_INSTAGRAM_ACCOUNT_ID", ""),
+		ReplizFacebookAccountID:  getEnv("REPLIZ_FACEBOOK_ACCOUNT_ID", ""),
+
+		UseAsynq:         useAsynq,
+		AsynqConcurrency: asynqConcurrency,
+		AsynqRetryMax:    asynqRetryMax,
 	}
 }
 
