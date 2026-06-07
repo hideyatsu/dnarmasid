@@ -388,7 +388,7 @@ func (s *AntamScraper) scrapeWithChromedp(defaultDate time.Time) (time.Time, []m
 			jpegBuf = buf // fallback to original
 		}
 
-		screenshotPrice = s.saveDebugFile("hero_price.jpeg", jpegBuf)
+		screenshotPrice = s.saveDebugFile("hero_price.jpg", jpegBuf)
 		homeBuyPrice = parsePrice(price1gStr)
 
 		if strings.Contains(lastUpdateStr, "Perubahan terakhir:") {
@@ -461,7 +461,7 @@ func (s *AntamScraper) scrapeWithChromedp(defaultDate time.Time) (time.Time, []m
 			_ = chromedp.Run(bbCtx, chromedp.Screenshot("body", &failBuf, chromedp.ByQuery))
 
 			failJpeg, _ := utils.ConvertPNGToJPEG(failBuf)
-			s.saveDebugFile("buyback_failed.jpeg", failJpeg)
+			s.saveDebugFile("buyback_failed.jpg", failJpeg)
 			return fmt.Errorf("buyback scrape failed: %w", err)
 		}
 
@@ -471,7 +471,7 @@ func (s *AntamScraper) scrapeWithChromedp(defaultDate time.Time) (time.Time, []m
 			jpegBuf = buf // fallback to original
 		}
 
-		screenshotBuyback = s.saveDebugFile("buyback_info.jpeg", jpegBuf)
+		screenshotBuyback = s.saveDebugFile("buyback_info.jpg", jpegBuf)
 		buybackSellPrice = parsePrice(buybackPriceStr)
 		return nil
 	})
