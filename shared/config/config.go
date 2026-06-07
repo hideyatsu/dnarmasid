@@ -28,12 +28,15 @@ type Config struct {
 	TelegramThreadGeneralID int
 	TelegramThreadPostID    int
 
-	// AI (Ollama/Gemini)
-	AIProvider   string
-	OllamaHost   string
-	OllamaModel  string
-	GeminiAPIKey string
-	GeminiModel  string
+	// AI (Ollama/Gemini/9router)
+	AIProvider      string
+	OllamaHost      string
+	OllamaModel     string
+	GeminiAPIKey    string
+	GeminiModel     string
+	NineRouterHost  string
+	NineRouterModel string
+	NineRouterAPIKey string
 
 	// Scraper
 	AntamURL             string
@@ -106,11 +109,14 @@ func Load() *Config {
 		TelegramThreadGeneralID: threadGeneral,
 		TelegramThreadPostID:    threadPost,
 
-		AIProvider:   getEnv("AI_PROVIDER", "ollama"),
-		OllamaHost:   getEnv("OLLAMA_HOST", "http://ollama:11434"),
-		OllamaModel:  getEnv("OLLAMA_MODEL", "gemma4:31b-cloud"),
-		GeminiAPIKey: getEnv("GEMINI_API_KEY", ""),
-		GeminiModel:  getEnv("GEMINI_MODEL", "gemini-3.1-flash-lite-preview"),
+		AIProvider:       getEnv("AI_PROVIDER", "9router"),
+		OllamaHost:       getEnv("OLLAMA_HOST", "http://ollama:11434"),
+		OllamaModel:      getEnv("OLLAMA_MODEL", "gemma4:31b-cloud"),
+		GeminiAPIKey:     getEnv("GEMINI_API_KEY", ""),
+		GeminiModel:      getEnv("GEMINI_MODEL", "gemini-3.1-flash-lite-preview"),
+		NineRouterHost:   getEnv("9ROUTER_HOST", "http://host.docker.internal:20128/v1"),
+		NineRouterModel:  getEnv("9ROUTER_MODEL", "combo-deepseek-v4-flash"),
+		NineRouterAPIKey: getEnv("9ROUTER_API_KEY", ""),
 
 		AntamURL:             getEnv("ANTAM_URL", "https://www.logammulia.com/id/harga-emas-hari-ini"),
 		ScrapeTimeoutSeconds: scrapeTimeout,
