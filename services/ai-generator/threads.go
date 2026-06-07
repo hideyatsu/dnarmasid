@@ -44,6 +44,8 @@ func (g *ContentGenerator) GenerateThreads(event *models.GoldScrapedEvent) error
 	switch g.cfg.AIProvider {
 	case "gemini":
 		content, err = g.callGemini(prompt)
+	case "9router":
+		content, err = g.callNineRouter(prompt)
 	default:
 		content, err = g.callOllama(prompt)
 	}
