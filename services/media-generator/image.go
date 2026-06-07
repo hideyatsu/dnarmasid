@@ -107,7 +107,7 @@ func (g *MediaGenerator) GenerateImage(event *models.GoldScrapedEvent) (*models.
 	absHtmlPath, _ := filepath.Abs(tempHtmlPath)
 	fileURL := "file://" + absHtmlPath
 
-	fileName := fmt.Sprintf("gold_%s.jpeg", event.Date)
+	fileName := fmt.Sprintf("gold_%s.jpg", event.Date)
 	filePath := filepath.Join(g.cfg.MediaOutputPath, fileName)
 
 	// Setup ExecAllocator untuk menginzinkan flag sandboxing no-sandbox saat di Docker (Alpine linux + Root)
@@ -238,7 +238,7 @@ func (g *MediaGenerator) GenerateCTAImage(event *models.GoldScrapedEvent) (strin
 	absHtmlPath, _ := filepath.Abs(tempHtmlPath)
 	fileURL := "file://" + absHtmlPath
 
-	fileName := fmt.Sprintf("cta_%s.jpeg", event.Date)
+	fileName := fmt.Sprintf("cta_%s.jpg", event.Date)
 	filePath := filepath.Join(g.cfg.MediaOutputPath, fileName)
 
 	// Chromedp render
