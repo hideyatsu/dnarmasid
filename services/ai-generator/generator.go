@@ -57,9 +57,11 @@ func (g *ContentGenerator) Generate(event *models.GoldScrapedEvent) (*models.Con
 	case "gemini":
 		content, err = g.callGemini(prompt)
 	case "ollama":
+		content, err = g.callOllama(prompt)
+	case "9router":
 		fallthrough
 	default:
-		content, err = g.callOllama(prompt)
+		content, err = g.callNineRouter(prompt)
 	}
 
 	if err != nil {
@@ -247,6 +249,66 @@ func (g *ContentGenerator) callGemini(prompt string) (string, error) {
 	}
 
 	return result.Candidates[0].Content.Parts[0].Text, nil
+}
+
+// callNineRouter calls the local 9router API (OpenAI-compatible)
+func (g *ContentGenerator) callNineRouter(prompt string) (string, error) {
+	url := strings.TrimRight(g.cfg.NineRouterHost, "/") + "/chat/completions"
+
+	reqBody := map[string]any{
+		"model": g.cfg.NineRouterModel,
+		"messages": []any{
+			map[string]string{
+				"role":    "user",
+				"content": prompt,
+			},
+		},
+		"temperature": 0.7,
+		"max_tokens":  1024,
+	}
+
+	body, _ := json.Marshal(reqBody)
+
+	req, err := http.NewRequest("POST", url, bytes.NewReader(body))
+	if err != nil {
+		return "", fmt.Errorf("create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	if g.cfg.NineRouterAPIKey != "" {
+		req.Header.Set("Authorization", "Bearer "+g.cfg.NineRouterAPIKey)
+	}
+
+	client := &http.Client{Timeout: 120 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("9router request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, _ := io.ReadAll(resp.Body)
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("9router api error (status %d): %s", resp.StatusCode, string(respBody))
+	}
+
+	var result struct {
+		Choices []struct {
+			Message struct {
+				Content string `json:"content"`
+			} `json:"message"`
+		} `json:"choices"`
+	}
+
+	if err := json.Unmarshal(respBody, &result); err != nil {
+		return "", fmt.Errorf("unmarshal error: %w", err)
+	}
+
+	if len(result.Choices) == 0 || result.Choices[0].Message.Content == "" {
+		return "", fmt.Errorf("empty response from 9router")
+	}
+
+	return result.Choices[0].Message.Content, nil
 }
 
 // ─────────────────────────────────────────
