@@ -106,6 +106,8 @@ services:
     container_name: ${COMPOSE_PROJECT_NAME:-dnarmasid}-ai-generator
     restart: unless-stopped
     env_file: .env
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       mysql:
         condition: service_healthy
