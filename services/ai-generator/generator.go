@@ -90,6 +90,10 @@ func (g *ContentGenerator) buildUnifiedPrompt(event *models.GoldScrapedEvent, p1
 	tEmoji := trendEmoji(event.Trend)
 	bbTEmoji := trendEmoji(event.BuybackTrend)
 
+	if !g.cfg.AICavemanMode {
+		return g.buildVerbosePrompt(event, p1g, spread, pct, tEmoji, bbTEmoji)
+	}
+
 	return fmt.Sprintf(`Generate an ENGAGING and EDUCATIONAL Instagram/Social Media caption about Antam gold prices in INDONESIAN language.
 
 CRITICAL INSTRUCTIONS:
@@ -121,6 +125,51 @@ Trend: [Provide a brief Indonesian market trend summary with emojis]
 [Add maximum 5 relevant hashtags in Indonesian]
 
 Tone: Professional, persuasive, and easy to understand.`,
+		event.Date,
+		formatRupiah(p1g.BuyPrice), tEmoji, formatRupiah(event.ChangeAmt),
+		formatRupiah(p1g.SellPrice), bbTEmoji, formatRupiah(event.BuybackChangeAmt),
+		formatRupiah(spread), pct, event.Trend, tEmoji)
+}
+
+// buildVerbosePrompt — long-form caption when AI_CAVEMAN_MODE=false
+func (g *ContentGenerator) buildVerbosePrompt(event *models.GoldScrapedEvent, p1g models.GoldPrice, spread int64, pct float64, tEmoji, bbTEmoji string) string {
+	return fmt.Sprintf(`Generate an ENGAGING, DETAILED, and EDUCATIONAL Instagram/Social Media caption about Antam gold prices in INDONESIAN language.
+
+CRITICAL INSTRUCTIONS:
+1. Use INDONESIAN language for the entire output.
+2. DO NOT use any Markdown formatting (no bold **, no italics _, no separators ***). Use plain text only.
+3. Caption MUST be LONG and COMPREHENSIVE — minimum 200 characters, maximum 500 characters.
+4. Do NOT use short sentences. Elaborate each point with context and explanation.
+
+DATA:
+Date: %s
+Price: Rp %s / gr (%s Rp %s)
+Buyback: Rp %s / gr (%s Rp %s)
+Spread: Rp %s (%.2f%%)
+Trend: %s %s
+
+MANDATORY TEMPLATE (Must be in INDONESIAN, strictly no bold):
+Harga Emas Antam Hari Ini
+
+Tanggal: [Date]
+Harga: Rp [Price] / gr ([Trend Triangle] Rp [Change Amount])
+Buyback: Rp [Buyback] / gr ([Trend Triangle] Rp [Change Amount])
+Spread: [Spread with explanation]
+
+Trend: [Provide Indonesian market trend summary — use multiple emojis and be expressive]
+
+[Provide 4-6 sentences of DEEP ANALYSIS in INDONESIAN:
+- Why is the price moving this way? (global factors, USD, geopolitik, supply/demand)
+- What does this mean for different types of investors (short-term vs long-term)?
+- Historical context: how does today compare to recent trends?
+- Practical advice: is this a good time to buy, sell, or hold?]
+
+[Create a creative, persuasive, and DETAILED Call to Action in INDONESIAN — encourage users to use our Telegram bot for real-time updates and price alerts. Mention specific benefits (notifikasi instan, alert harga, rekomendasi signal).]
+
+[Add 5-7 relevant hashtags in Indonesian]
+
+Tone: Professional, educational, insightful, and easy to understand.
+Output style: Rich, detailed, elaborated — like a market analyst sharing knowledge.`,
 		event.Date,
 		formatRupiah(p1g.BuyPrice), tEmoji, formatRupiah(event.ChangeAmt),
 		formatRupiah(p1g.SellPrice), bbTEmoji, formatRupiah(event.BuybackChangeAmt),
@@ -265,6 +314,7 @@ func (g *ContentGenerator) callNineRouter(prompt string) (string, error) {
 		},
 		"temperature": 0.7,
 		"max_tokens":  1024,
+		"stream":      false,
 	}
 
 	body, _ := json.Marshal(reqBody)
