@@ -98,7 +98,8 @@ func (g *MediaGenerator) GenerateImage(event *models.GoldScrapedEvent) (*models.
 	if err := os.MkdirAll(g.cfg.MediaOutputPath, 0755); err != nil {
 		return nil, fmt.Errorf("failed creating output dir: %w", err)
 	}
-	tempHtmlPath := filepath.Join(g.cfg.MediaOutputPath, fmt.Sprintf("temp_%s.html", event.Date))
+	safeDate := strings.ReplaceAll(event.Date, " ", "_")
+	tempHtmlPath := filepath.Join(g.cfg.MediaOutputPath, fmt.Sprintf("temp_%s.html", safeDate))
 	if err := os.WriteFile(tempHtmlPath, []byte(htmlStr), 0644); err != nil {
 		return nil, fmt.Errorf("failed to write resolved html: %w", err)
 	}
@@ -107,7 +108,7 @@ func (g *MediaGenerator) GenerateImage(event *models.GoldScrapedEvent) (*models.
 	absHtmlPath, _ := filepath.Abs(tempHtmlPath)
 	fileURL := "file://" + absHtmlPath
 
-	fileName := fmt.Sprintf("gold_%s.jpg", event.Date)
+	fileName := fmt.Sprintf("gold_%s.jpg", safeDate)
 	filePath := filepath.Join(g.cfg.MediaOutputPath, fileName)
 
 	// Setup ExecAllocator untuk menginzinkan flag sandboxing no-sandbox saat di Docker (Alpine linux + Root)
@@ -229,7 +230,8 @@ func (g *MediaGenerator) GenerateCTAImage(event *models.GoldScrapedEvent) (strin
 	if err := os.MkdirAll(g.cfg.MediaOutputPath, 0755); err != nil {
 		return "", fmt.Errorf("failed creating output dir: %w", err)
 	}
-	tempHtmlPath := filepath.Join(g.cfg.MediaOutputPath, fmt.Sprintf("temp_cta_%s.html", event.Date))
+	safeDate := strings.ReplaceAll(event.Date, " ", "_")
+	tempHtmlPath := filepath.Join(g.cfg.MediaOutputPath, fmt.Sprintf("temp_cta_%s.html", safeDate))
 	if err := os.WriteFile(tempHtmlPath, []byte(htmlStr), 0644); err != nil {
 		return "", fmt.Errorf("failed to write CTA html: %w", err)
 	}
@@ -238,7 +240,7 @@ func (g *MediaGenerator) GenerateCTAImage(event *models.GoldScrapedEvent) (strin
 	absHtmlPath, _ := filepath.Abs(tempHtmlPath)
 	fileURL := "file://" + absHtmlPath
 
-	fileName := fmt.Sprintf("cta_%s.jpg", event.Date)
+	fileName := fmt.Sprintf("cta_%s.jpg", safeDate)
 	filePath := filepath.Join(g.cfg.MediaOutputPath, fileName)
 
 	// Chromedp render
