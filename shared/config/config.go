@@ -37,6 +37,8 @@ type Config struct {
 	NineRouterHost  string
 	NineRouterModel string
 	NineRouterAPIKey string
+	// Caveman mode: true = terse/pendek, false = verbose/panjang
+	AICavemanMode bool
 
 	// Scraper
 	AntamURL             string
@@ -91,6 +93,7 @@ func Load() *Config {
 	useAsynq, _ := strconv.ParseBool(getEnv("USE_ASYNQ", "false"))
 	asynqConcurrency, _ := strconv.Atoi(getEnv("ASYNQ_CONCURRENCY", "10"))
 	asynqRetryMax, _ := strconv.Atoi(getEnv("ASYNQ_RETRY_MAX", "3"))
+	cavemanMode := getEnv("AI_CAVEMAN_MODE", "true") != "false"
 
 	return &Config{
 		MySQLHost:     getEnv("MYSQL_HOST", "mysql"),
@@ -148,6 +151,7 @@ func Load() *Config {
 		UseAsynq:         useAsynq,
 		AsynqConcurrency: asynqConcurrency,
 		AsynqRetryMax:    asynqRetryMax,
+		AICavemanMode:    cavemanMode,
 	}
 }
 
