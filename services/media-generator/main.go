@@ -71,8 +71,47 @@ func main() {
 				} else {
 					log.Printf("[media-generator] ✅ Image media.ready published: %s", imgEvent.FileName)
 
+					// Generate new slides for 7-slide carousel (hero, bridging, features)
+					var heroSlideURL, bridgingSlideURL, featureHargaURL, featureStokAlertURL, featureStokButikURL string
+
+					if url, err := generator.GenerateHeroScreenshot(event.ScreenshotPriceURL, event.Date); err != nil {
+						log.Printf("[media-generator] ⚠️ Hero screenshot failed (non-blocking): %v", err)
+					} else {
+						heroSlideURL = url
+					}
+
+					if url, err := generator.GenerateBridgingSlide(event.Date); err != nil {
+						log.Printf("[media-generator] ⚠️ Bridging slide failed (non-blocking): %v", err)
+					} else {
+						bridgingSlideURL = url
+					}
+
+					if cfg.SlideHargaNotifURL != "" {
+						if url, err := generator.GenerateFeatureScreenshot(cfg.SlideHargaNotifURL, "Notifikasi Harga Emas", "Dapatkan update harga emas otomatis langsung ke Telegram kamu."); err != nil {
+							log.Printf("[media-generator] ⚠️ Feature harga slide failed (non-blocking): %v", err)
+						} else {
+							featureHargaURL = url
+						}
+					}
+
+					if cfg.SlideStokAlertURL != "" {
+						if url, err := generator.GenerateFeatureScreenshot(cfg.SlideStokAlertURL, "Notifikasi Stok Emas", "Pantau stok emas Antam di semua butik secara real-time."); err != nil {
+							log.Printf("[media-generator] ⚠️ Feature stok alert slide failed (non-blocking): %v", err)
+						} else {
+							featureStokAlertURL = url
+						}
+					}
+
+					if cfg.SlideStokButikURL != "" {
+						if url, err := generator.GenerateFeatureScreenshot(cfg.SlideStokButikURL, "Info Stok Butik", "Cek ketersediaan stok di butik Antam terdekat."); err != nil {
+							log.Printf("[media-generator] ⚠️ Feature stok butik slide failed (non-blocking): %v", err)
+						} else {
+							featureStokButikURL = url
+						}
+					}
+
 					// Trigger Repliz Uploader Event with Polling for AI Caption
-					go func(priceID uint, date string, imgEvt *models.MediaReadyEvent, screenshotPriceURL string, screenshotBuybackURL string, ctaImageURL string) {
+					go func(priceID uint, date string, imgEvt *models.MediaReadyEvent, screenshotPriceURL string, screenshotBuybackURL string, ctaImageURL string, heroSlideURL string, bridgingSlideURL string, featureHargaURL string, featureStokAlertURL string, featureStokButikURL string) {
 						var caption string
 						// Poll for max 60 seconds (20 retries * 3s)
 						for i := 0; i < 20; i++ {
@@ -89,13 +128,18 @@ func main() {
 						}
 
 						replizEvent := models.MediaGenerationCompletedEvent{
-							PriceID:              priceID,
-							Date:                 date,
-							Caption:              caption,
-							InfographicURL:       imgEvt.PublicURL,
-							CTAImageURL:          ctaImageURL,
-							ScreenshotPriceURL:   screenshotPriceURL,
-							ScreenshotBuybackURL: screenshotBuybackURL,
+							PriceID:                    priceID,
+							Date:                       date,
+							Caption:                    caption,
+							InfographicURL:             imgEvt.PublicURL,
+							CTAImageURL:                ctaImageURL,
+							ScreenshotPriceURL:         screenshotPriceURL,
+							ScreenshotBuybackURL:       screenshotBuybackURL,
+							HeroScreenshotSlideURL:     heroSlideURL,
+							BridgingSlideURL:           bridgingSlideURL,
+							FeatureHargaSlideURL:       featureHargaURL,
+							FeatureStokAlertSlideURL:   featureStokAlertURL,
+							FeatureStokButikSlideURL:   featureStokButikURL,
 						}
 
 						if err := q.Publish(queue.KeyMediaGenerationCompleted, replizEvent); err != nil {
@@ -103,7 +147,7 @@ func main() {
 						} else {
 							log.Printf("[media-generator] ✅ Repliz event published for date %s", date)
 						}
-					}(event.PriceID, event.Date, imgEvent, event.ScreenshotPriceURL, event.ScreenshotBuybackURL, ctaURL)
+					}(event.PriceID, event.Date, imgEvent, event.ScreenshotPriceURL, event.ScreenshotBuybackURL, ctaURL, heroSlideURL, bridgingSlideURL, featureHargaURL, featureStokAlertURL, featureStokButikURL)
 				}
 			}
 
