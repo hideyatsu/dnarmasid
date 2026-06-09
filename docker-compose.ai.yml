@@ -5,7 +5,6 @@
 services:
   ollama:
     image: ollama/ollama:latest
-    container_name: dnarmasid-ollama
     restart: unless-stopped
     environment:
       OLLAMA_HOST: 0.0.0.0:11434
