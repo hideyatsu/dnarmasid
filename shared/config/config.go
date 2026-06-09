@@ -59,6 +59,11 @@ type Config struct {
 	CTASubtext  string
 	CTAHandle   string
 
+	// Static Screenshot URLs (feature slides)
+	SlideHargaNotifURL   string
+	SlideStokAlertURL    string
+	SlideStokButikURL    string
+
 	// Cloudflare R2
 	R2AccountID    string
 	R2AccessKey    string
@@ -135,6 +140,10 @@ func Load() *Config {
 		CTAHeadline: getEnv("CTA_HEADLINE", "INVESTASI EMAS\nMULAI HARI INI"),
 		CTASubtext:  getEnv("CTA_SUBTEXT", "Update harga harian, tips & insight emas\nlangsung di tangan Anda."),
 		CTAHandle:   getEnv("CTA_HANDLE", "@dnarmasid"),
+
+		SlideHargaNotifURL: getEnv("SLIDE_HARGA_NOTIF_URL", ""),
+		SlideStokAlertURL:  getEnv("SLIDE_STOK_ALERT_URL", ""),
+		SlideStokButikURL:  getEnv("SLIDE_STOK_BUTIK_URL", ""),
 
 		R2AccountID:    getEnv("R2_ACCOUNT_ID", ""),
 		R2AccessKey:    getEnv("R2_ACCESS_KEY", ""),

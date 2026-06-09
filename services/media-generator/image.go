@@ -306,3 +306,300 @@ func (g *MediaGenerator) GenerateCTAImage(event *models.GoldScrapedEvent) (strin
 	return publicURL, nil
 }
 
+// GenerateHeroScreenshot membuat slide hero price (wrapped screenshot dalam phone mockup)
+func (g *MediaGenerator) GenerateHeroScreenshot(screenshotURL, date string) (string, error) {
+	templatePath := filepath.Join("templates", "heroScreenshotTemplate.html")
+	if _, err := os.Stat(templatePath); os.IsNotExist(err) {
+		templatePath = filepath.Join("services", "media-generator", "templates", "heroScreenshotTemplate.html")
+	}
+
+	htmlContent, err := os.ReadFile(templatePath)
+	if err != nil {
+		return "", fmt.Errorf("failed to read heroScreenshot template %s: %w", templatePath, err)
+	}
+	htmlStr := string(htmlContent)
+
+	replacements := map[string]string{
+		"{{date}}":           date,
+		"{{screenshot_url}}": screenshotURL,
+	}
+
+	for k, v := range replacements {
+		htmlStr = strings.ReplaceAll(htmlStr, k, v)
+	}
+
+	if err := os.MkdirAll(g.cfg.MediaOutputPath, 0755); err != nil {
+		return "", fmt.Errorf("failed creating output dir: %w", err)
+	}
+	safeDate := strings.ReplaceAll(date, " ", "_")
+	tempHtmlPath := filepath.Join(g.cfg.MediaOutputPath, fmt.Sprintf("temp_hero_%s.html", safeDate))
+	if err := os.WriteFile(tempHtmlPath, []byte(htmlStr), 0644); err != nil {
+		return "", fmt.Errorf("failed to write heroScreenshot html: %w", err)
+	}
+	defer os.Remove(tempHtmlPath)
+
+	absHtmlPath, _ := filepath.Abs(tempHtmlPath)
+	fileURL := "file://" + absHtmlPath
+
+	fileName := fmt.Sprintf("hero_screenshot_%s.jpg", safeDate)
+	filePath := filepath.Join(g.cfg.MediaOutputPath, fileName)
+
+	opts := append(chromedp.DefaultExecAllocatorOptions[:],
+		chromedp.Flag("no-sandbox", true),
+		chromedp.Flag("disable-setuid-sandbox", true),
+		chromedp.Flag("disable-dev-shm-usage", true),
+		chromedp.Flag("binary", "/usr/bin/chromium-browser"),
+		chromedp.Flag("extra-chromium-args", "--headless=new --disable-gpu"),
+	)
+	allocCtx, allocCancel := chromedp.NewExecAllocator(context.Background(), opts...)
+	defer allocCancel()
+
+	ctx, cancel := chromedp.NewContext(allocCtx)
+	defer cancel()
+
+	ctx, cancel = context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	var buf []byte
+	err = chromedp.Run(ctx,
+		chromedp.EmulateViewport(1080, 1080),
+		chromedp.Navigate(fileURL),
+		chromedp.WaitVisible("body", chromedp.ByQuery),
+		chromedp.Sleep(2*time.Second),
+		chromedp.CaptureScreenshot(&buf),
+	)
+	if err != nil {
+		return "", fmt.Errorf("chromedp heroScreenshot capture error: %w", err)
+	}
+
+	jpegBuf, err := utils.ConvertPNGToJPEG(buf)
+	if err != nil {
+		return "", fmt.Errorf("failed converting heroScreenshot png to jpeg: %w", err)
+	}
+
+	if err := os.WriteFile(filePath, jpegBuf, 0644); err != nil {
+		return "", fmt.Errorf("failed exporting heroScreenshot jpeg: %w", err)
+	}
+
+	log.Printf("[media-generator] 🖼️ Hero screenshot image saved: %s", filePath)
+
+	var publicURL string
+	if g.storage != nil {
+		content, err := os.ReadFile(filePath)
+		if err == nil {
+			url, err := g.storage.UploadFile(context.Background(), fileName, content, "image/jpeg")
+			if err != nil {
+				log.Printf("[media-generator] ❌ R2 heroScreenshot upload failed: %v", err)
+			} else {
+				log.Printf("[media-generator] ☁️ Hero screenshot uploaded to R2: %s", url)
+				publicURL = url
+				os.Remove(filePath)
+			}
+		}
+	}
+
+	if publicURL == "" {
+		publicURL = filePath
+	}
+
+	return publicURL, nil
+}
+
+// GenerateBridgingSlide membuat slide bridging fitur (static text, no screenshot)
+func (g *MediaGenerator) GenerateBridgingSlide(date string) (string, error) {
+	templatePath := filepath.Join("templates", "bridgingTemplate.html")
+	if _, err := os.Stat(templatePath); os.IsNotExist(err) {
+		templatePath = filepath.Join("services", "media-generator", "templates", "bridgingTemplate.html")
+	}
+
+	htmlContent, err := os.ReadFile(templatePath)
+	if err != nil {
+		return "", fmt.Errorf("failed to read bridging template %s: %w", templatePath, err)
+	}
+	htmlStr := string(htmlContent)
+
+	replacements := map[string]string{
+		"{{date}}": date,
+	}
+
+	for k, v := range replacements {
+		htmlStr = strings.ReplaceAll(htmlStr, k, v)
+	}
+
+	if err := os.MkdirAll(g.cfg.MediaOutputPath, 0755); err != nil {
+		return "", fmt.Errorf("failed creating output dir: %w", err)
+	}
+	safeDate := strings.ReplaceAll(date, " ", "_")
+	tempHtmlPath := filepath.Join(g.cfg.MediaOutputPath, fmt.Sprintf("temp_bridging_%s.html", safeDate))
+	if err := os.WriteFile(tempHtmlPath, []byte(htmlStr), 0644); err != nil {
+		return "", fmt.Errorf("failed to write bridging html: %w", err)
+	}
+	defer os.Remove(tempHtmlPath)
+
+	absHtmlPath, _ := filepath.Abs(tempHtmlPath)
+	fileURL := "file://" + absHtmlPath
+
+	fileName := fmt.Sprintf("bridging_%s.jpg", safeDate)
+	filePath := filepath.Join(g.cfg.MediaOutputPath, fileName)
+
+	opts := append(chromedp.DefaultExecAllocatorOptions[:],
+		chromedp.Flag("no-sandbox", true),
+		chromedp.Flag("disable-setuid-sandbox", true),
+		chromedp.Flag("disable-dev-shm-usage", true),
+		chromedp.Flag("binary", "/usr/bin/chromium-browser"),
+		chromedp.Flag("extra-chromium-args", "--headless=new --disable-gpu"),
+	)
+	allocCtx, allocCancel := chromedp.NewExecAllocator(context.Background(), opts...)
+	defer allocCancel()
+
+	ctx, cancel := chromedp.NewContext(allocCtx)
+	defer cancel()
+
+	ctx, cancel = context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	var buf []byte
+	err = chromedp.Run(ctx,
+		chromedp.EmulateViewport(1080, 1080),
+		chromedp.Navigate(fileURL),
+		chromedp.WaitVisible("body", chromedp.ByQuery),
+		chromedp.Sleep(2*time.Second),
+		chromedp.CaptureScreenshot(&buf),
+	)
+	if err != nil {
+		return "", fmt.Errorf("chromedp bridging capture error: %w", err)
+	}
+
+	jpegBuf, err := utils.ConvertPNGToJPEG(buf)
+	if err != nil {
+		return "", fmt.Errorf("failed converting bridging png to jpeg: %w", err)
+	}
+
+	if err := os.WriteFile(filePath, jpegBuf, 0644); err != nil {
+		return "", fmt.Errorf("failed exporting bridging jpeg: %w", err)
+	}
+
+	log.Printf("[media-generator] 🖼️ Bridging slide image saved: %s", filePath)
+
+	var publicURL string
+	if g.storage != nil {
+		content, err := os.ReadFile(filePath)
+		if err == nil {
+			url, err := g.storage.UploadFile(context.Background(), fileName, content, "image/jpeg")
+			if err != nil {
+				log.Printf("[media-generator] ❌ R2 bridging upload failed: %v", err)
+			} else {
+				log.Printf("[media-generator] ☁️ Bridging slide uploaded to R2: %s", url)
+				publicURL = url
+				os.Remove(filePath)
+			}
+		}
+	}
+
+	if publicURL == "" {
+		publicURL = filePath
+	}
+
+	return publicURL, nil
+}
+
+// GenerateFeatureScreenshot membuat slide fitur dengan screenshot dalam phone mockup (reusable untuk slides 4, 5, 6)
+func (g *MediaGenerator) GenerateFeatureScreenshot(screenshotURL, title, subtitle string) (string, error) {
+	templatePath := filepath.Join("templates", "screenshotFrameTemplate.html")
+	if _, err := os.Stat(templatePath); os.IsNotExist(err) {
+		templatePath = filepath.Join("services", "media-generator", "templates", "screenshotFrameTemplate.html")
+	}
+
+	htmlContent, err := os.ReadFile(templatePath)
+	if err != nil {
+		return "", fmt.Errorf("failed to read screenshotFrame template %s: %w", templatePath, err)
+	}
+	htmlStr := string(htmlContent)
+
+	replacements := map[string]string{
+		"{{title}}":          title,
+		"{{subtitle}}":       subtitle,
+		"{{screenshot_url}}": screenshotURL,
+	}
+
+	for k, v := range replacements {
+		htmlStr = strings.ReplaceAll(htmlStr, k, v)
+	}
+
+	if err := os.MkdirAll(g.cfg.MediaOutputPath, 0755); err != nil {
+		return "", fmt.Errorf("failed creating output dir: %w", err)
+	}
+	safeTitle := strings.ReplaceAll(strings.ToLower(title), " ", "_")
+	tempHtmlPath := filepath.Join(g.cfg.MediaOutputPath, fmt.Sprintf("temp_feature_%s.html", safeTitle))
+	if err := os.WriteFile(tempHtmlPath, []byte(htmlStr), 0644); err != nil {
+		return "", fmt.Errorf("failed to write featureScreenshot html: %w", err)
+	}
+	defer os.Remove(tempHtmlPath)
+
+	absHtmlPath, _ := filepath.Abs(tempHtmlPath)
+	fileURL := "file://" + absHtmlPath
+
+	fileName := fmt.Sprintf("feature_%s.jpg", safeTitle)
+	filePath := filepath.Join(g.cfg.MediaOutputPath, fileName)
+
+	opts := append(chromedp.DefaultExecAllocatorOptions[:],
+		chromedp.Flag("no-sandbox", true),
+		chromedp.Flag("disable-setuid-sandbox", true),
+		chromedp.Flag("disable-dev-shm-usage", true),
+		chromedp.Flag("binary", "/usr/bin/chromium-browser"),
+		chromedp.Flag("extra-chromium-args", "--headless=new --disable-gpu"),
+	)
+	allocCtx, allocCancel := chromedp.NewExecAllocator(context.Background(), opts...)
+	defer allocCancel()
+
+	ctx, cancel := chromedp.NewContext(allocCtx)
+	defer cancel()
+
+	ctx, cancel = context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	var buf []byte
+	err = chromedp.Run(ctx,
+		chromedp.EmulateViewport(1080, 1080),
+		chromedp.Navigate(fileURL),
+		chromedp.WaitVisible("body", chromedp.ByQuery),
+		chromedp.Sleep(2*time.Second),
+		chromedp.CaptureScreenshot(&buf),
+	)
+	if err != nil {
+		return "", fmt.Errorf("chromedp featureScreenshot capture error: %w", err)
+	}
+
+	jpegBuf, err := utils.ConvertPNGToJPEG(buf)
+	if err != nil {
+		return "", fmt.Errorf("failed converting featureScreenshot png to jpeg: %w", err)
+	}
+
+	if err := os.WriteFile(filePath, jpegBuf, 0644); err != nil {
+		return "", fmt.Errorf("failed exporting featureScreenshot jpeg: %w", err)
+	}
+
+	log.Printf("[media-generator] 🖼️ Feature screenshot saved: %s", filePath)
+
+	var publicURL string
+	if g.storage != nil {
+		content, err := os.ReadFile(filePath)
+		if err == nil {
+			url, err := g.storage.UploadFile(context.Background(), fileName, content, "image/jpeg")
+			if err != nil {
+				log.Printf("[media-generator] ❌ R2 featureScreenshot upload failed: %v", err)
+			} else {
+				log.Printf("[media-generator] ☁️ Feature screenshot uploaded to R2: %s", url)
+				publicURL = url
+				os.Remove(filePath)
+			}
+		}
+	}
+
+	if publicURL == "" {
+		publicURL = filePath
+	}
+
+	return publicURL, nil
+}
+
