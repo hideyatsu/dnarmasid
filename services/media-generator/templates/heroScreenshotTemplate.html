@@ -7,8 +7,8 @@
     <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <style>
         :root { --primary-gold: #B89965; --text-black: #1A1A1A; --telegram-blue: #24A1DE; }
-        body, html { margin: 0; padding: 0; font-family: 'Montserrat', sans-serif; width: 1080px; height: 1080px; display: flex; justify-content: center; align-items: center; background-color: #17181c; }
-        .post-container { width: 1080px; height: 1080px; position: relative; display: flex; flex-direction: column; justify-content: space-between; align-items: center; box-sizing: border-box; background: radial-gradient(circle at 30% 30%, #F5E8D3 0%, #E3CFA8 45%, #C2A67A 100%); overflow: hidden; }
+        body, html { margin: 0; padding: 0; font-family: 'Montserrat', sans-serif; width: 100%; height: 100%; overflow: hidden; background: radial-gradient(circle at 30% 30%, #F5E8D3 0%, #E3CFA8 45%, #C2A67A 100%); }
+        .post-container { width: 1080px; height: 1080px; position: relative; display: flex; flex-direction: column; justify-content: space-between; align-items: center; box-sizing: border-box; background: radial-gradient(circle at 30% 30%, #F5E8D3 0%, #E3CFA8 45%, #C2A67A 100%); overflow: hidden; margin: 0 auto; }
         .bg-ornament { position: absolute; pointer-events: none; z-index: 0; }
         .circle-top-right { width: 972px; height: 972px; border: 4px solid rgba(255, 255, 255, 0.2); border-radius: 50%; top: -324px; right: -324px; }
         .diamond-bottom-left { width: 540px; height: 540px; border: 3px solid rgba(255, 255, 255, 0.25); transform: rotate(45deg); bottom: -172px; left: -216px; }
@@ -18,10 +18,9 @@
         .header h1 { color: #7D5A29; font-size: 52px; font-weight: 800; margin: 0; letter-spacing: 2px; }
         .header .date { color: #5A5A5A; font-size: 30px; font-weight: 600; margin: 8px 0 0; }
         .content-wrapper { flex: 1; display: flex; justify-content: center; align-items: center; width: 100%; padding-bottom: 20px; }
-        .phone-mockup { width: 680px; background: #FFFFFF; border-radius: 44px; padding: 20px; box-shadow: 0 24px 64px rgba(0,0,0,0.15); border: 10px solid #2A2A2A; display: flex; flex-direction: column; align-items: center; }
-        .phone-notch { width: 180px; height: 28px; background: #2A2A2A; border-radius: 0 0 16px 16px; margin-bottom: 14px; }
-        .screenshot-container { width: 100%; border-radius: 16px; overflow: hidden; background: #F5F5F5; }
-        .screenshot-container img { width: 100%; height: auto; display: block; object-fit: contain; max-height: 820px; }
+        .screenshot-frame { width: 780px; background: #1A1A1A; border-radius: 24px; padding: 12px; box-shadow: 0 24px 64px rgba(0,0,0,0.25); display: flex; flex-direction: column; align-items: center; }
+        .screenshot-container { width: 100%; border-radius: 14px; overflow: hidden; background: #F5F5F5; }
+        .screenshot-container img { width: 100%; height: auto; display: block; object-fit: contain; max-height: 860px; border-radius: 14px; }
         .footer { background-color: transparent; width: 100%; height: 108px; display: flex; justify-content: space-between; align-items: center; padding: 0 86px 38px 86px; box-sizing: border-box; }
         .footer-left, .footer-right { display: flex; align-items: center; }
         .instagram-logo { width: 52px; height: 52px; margin-right: 18px; display: flex; align-items: center; }
@@ -40,8 +39,7 @@
             <p class="date">{{date}}</p>
         </header>
         <div class="content-wrapper">
-            <div class="phone-mockup">
-                <div class="phone-notch"></div>
+            <div class="screenshot-frame">
                 <div class="screenshot-container">
                     <img src="{{screenshot_url}}" alt="Screenshot Harga Emas">
                 </div>
