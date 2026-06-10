@@ -17,6 +17,7 @@ services:
 
 networks:
   dnarmasid-net:
+    name: ${COMPOSE_PROJECT_NAME}-net
     driver: bridge
 
 volumes:
