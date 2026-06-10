@@ -86,28 +86,17 @@ func main() {
 						bridgingSlideURL = url
 					}
 
+					// Use static slides directly from R2 (no template rendering needed)
 					if cfg.SlideHargaNotifURL != "" {
-						if url, err := generator.GenerateFeatureScreenshot(cfg.SlideHargaNotifURL, "Notifikasi Harga Emas", "Dapatkan update harga emas otomatis langsung ke Telegram kamu."); err != nil {
-							log.Printf("[media-generator] ⚠️ Feature harga slide failed (non-blocking): %v", err)
-						} else {
-							featureHargaURL = url
-						}
+						featureHargaURL = cfg.SlideHargaNotifURL
 					}
 
 					if cfg.SlideStokAlertURL != "" {
-						if url, err := generator.GenerateFeatureScreenshot(cfg.SlideStokAlertURL, "Notifikasi Stok Emas", "Pantau stok emas Antam di semua butik secara real-time."); err != nil {
-							log.Printf("[media-generator] ⚠️ Feature stok alert slide failed (non-blocking): %v", err)
-						} else {
-							featureStokAlertURL = url
-						}
+						featureStokAlertURL = cfg.SlideStokAlertURL
 					}
 
 					if cfg.SlideStokButikURL != "" {
-						if url, err := generator.GenerateFeatureScreenshot(cfg.SlideStokButikURL, "Info Stok Butik", "Cek ketersediaan stok di butik Antam terdekat."); err != nil {
-							log.Printf("[media-generator] ⚠️ Feature stok butik slide failed (non-blocking): %v", err)
-						} else {
-							featureStokButikURL = url
-						}
+						featureStokButikURL = cfg.SlideStokButikURL
 					}
 
 					// Trigger Repliz Uploader Event with Polling for AI Caption
