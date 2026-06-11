@@ -75,6 +75,11 @@ func (s *AntamScraper) Run(forceDummy bool) (*models.GoldScrapedEvent, error) {
 	// Kita cek record terbaru berdasarkan source_update_time
 	var latestRecord models.GoldPrice
 	result := s.db.Where("gram = 1").Order("source_update_time desc").First(&latestRecord)
+	if result.Error != nil && result.Error != gorm.ErrRecordNotFound {
+		// Fail-closed: DB error, skip scrape to prevent stale broadcast
+		log.Printf("[scraper] ❌ Guardrail DB check failed: %v — skipping scrape to prevent stale broadcast", result.Error)
+		return nil, fmt.Errorf("guardrail check failed: %w", result.Error)
+	}
 	if result.Error == nil && latestRecord.SourceUpdateTime != nil && latestRecord.SourceUpdateTime.Equal(updateTime) {
 		log.Printf("[scraper] ℹ️ Waktu update sama (%v). Skip pipeline.", updateTime.Format("02 Jan 2006 15:04:05"))
 		return nil, fmt.Errorf("no update since last scrape")
