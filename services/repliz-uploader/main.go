@@ -110,9 +110,9 @@ Dapatkan update harga real-time dan alert otomatis lewat bot Telegram kami. Klik
 				IsDraft:       false,
 				Collaborators: []string{},
 				Music: repliz.Music{
-					ID:        "",
-					Artist:    "",
-					Name:      "",
+					ID:        "7637201849280711442",
+					Artist:    "DnarMasID",
+					Name:      "original sound - DnarMasID",
 					Thumbnail: "",
 				},
 				Products: []string{},
