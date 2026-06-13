@@ -82,7 +82,7 @@ func (s *AntamScraper) Run(forceDummy bool) (*models.GoldScrapedEvent, error) {
 	}
 	if result.Error == nil && latestRecord.SourceUpdateTime != nil && latestRecord.SourceUpdateTime.Equal(updateTime) {
 		log.Printf("[scraper] ℹ️ Waktu update sama (%v). Skip pipeline.", updateTime.Format("02 Jan 2006 15:04:05"))
-		return nil, fmt.Errorf("no update since last scrape")
+		return nil, nil
 	}
 
 	parsedDate := updateTime.Truncate(24 * time.Hour)
@@ -119,7 +119,7 @@ func (s *AntamScraper) Run(forceDummy bool) (*models.GoldScrapedEvent, error) {
 
 	if !didChange {
 		log.Printf("[scraper] ℹ️ Tidak ada perubahan data. Skip pipeline.")
-		return nil, fmt.Errorf("no change in price")
+		return nil, nil
 	}
 
 	// 4. Hitung perubahan vs kemarin (gram 1)
