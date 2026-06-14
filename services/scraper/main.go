@@ -153,6 +153,12 @@ func main() {
 				continue
 			}
 
+			// Guardrail: scraper.Run() returns (nil, nil) when no new data detected
+			if event == nil {
+				log.Println("[scraper] ℹ️ No new data (guardrail triggered skip). Skip fan-out publish.")
+				continue
+			}
+
 			// Publish hasil ke Redis → ai, media (Fan-out)
 			// NOTE: Telegram bot tidak lagi dikirim langsung — hanya via content.ready
 			// dari ai-generator untuk menghindari duplikasi pesan.
