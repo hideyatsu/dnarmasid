@@ -17,14 +17,21 @@ import (
 )
 
 type CommandHandler struct {
-	cfg *config.Config
-	db  *gorm.DB
-	bot *tgbotapi.BotAPI
-	q   *queue.Client
+	cfg      *config.Config
+	db       *gorm.DB
+	bot      *tgbotapi.BotAPI
+	q        *queue.Client
+	pipeline *PipelineHandler
 }
 
 func NewCommandHandler(cfg *config.Config, db *gorm.DB, bot *tgbotapi.BotAPI, q *queue.Client) *CommandHandler {
-	return &CommandHandler{cfg: cfg, db: db, bot: bot, q: q}
+	return &CommandHandler{
+		cfg:      cfg,
+		db:       db,
+		bot:      bot,
+		q:        q,
+		pipeline: NewPipelineHandler(cfg, db, bot, q),
+	}
 }
 
 // Listen mendengarkan update/command dari user Telegram
@@ -74,6 +81,8 @@ func (h *CommandHandler) handleMessage(msg *tgbotapi.Message) {
 		h.handleScrape(chatID)
 	case "threads":
 		h.handleThreads(chatID, msg.CommandArguments())
+	case "pipeline":
+		h.pipeline.Handle(chatID, msg.CommandArguments())
 	default:
 		if msg.IsCommand() {
 			h.send(chatID, "❓ Command tidak dikenal. Ketik /help untuk daftar command.")
@@ -157,7 +166,8 @@ func (h *CommandHandler) handleHelp(chatID int64) {
 
 	if chatID == h.cfg.TelegramAdminChatID {
 		text += "/scrape — [Admin] Trigger manual scrape\n" +
-			"/threads — [Admin] Review pending Threads content\n"
+			"/threads — [Admin] Review pending Threads content\n" +
+			"/pipeline — [Admin] Trigger pipeline steps secara modular\n"
 	}
 
 	text += "\n📲 Follow kami: @DnarMasID"
