@@ -39,23 +39,6 @@ func main() {
 	}
 	publish(q, queue.KeyMediaReady, mediaEvent)
 
-	// 3. Push GoldScrapedEvent
-	scrapedEvent := models.GoldScrapedEvent{
-		Date:       time.Now().Format("2006-01-02"),
-		UpdateTime: time.Now().Format("02 Jan 2006 15:04:05"),
-		PriceID:    1,
-		Prices: []models.GoldPrice{
-			{Gram: 1, BuyPrice: 1350000, SellPrice: 1240000},
-			{Gram: 0.5, BuyPrice: 725000, SellPrice: 620000},
-		},
-		ChangePct:        0.75,
-		ChangeAmt:        10000,
-		Trend:            "up",
-		BuybackChangeAmt: 5000,
-		BuybackTrend:     "up",
-	}
-	publish(q, queue.KeyGoldScrapedBot, scrapedEvent)
-
 	log.Println("✅ All dummy events pushed to Redis.")
 }
 

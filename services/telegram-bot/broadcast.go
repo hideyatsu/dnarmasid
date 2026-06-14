@@ -5,7 +5,6 @@ import (
 	"log"
 	"os"
 	"strings"
-	"time"
 
 	"dnarmasid/shared/config"
 	"dnarmasid/shared/models"
@@ -220,99 +219,6 @@ func (b *Broadcaster) sendText(chatID int64, threadID int, text string) {
 	if _, err := b.bot.MakeRequest("sendMessage", params); err != nil {
 		log.Printf("[broadcaster] ⚠️ sendText error: %v", err)
 	}
-}
-
-// SendScrapeNotification mengirim notifikasi singkat harga harian.
-// Broadcast ke #General default (threadID=0) — Telegram tidak butuh thread_id eksplisit.
-func (b *Broadcaster) SendScrapeNotification(event *models.GoldScrapedEvent) error {
-	if b.cfg.TelegramGroupID == 0 {
-		return fmt.Errorf("TELEGRAM_GROUP_ID belum dikonfigurasi")
-	}
-
-	chatID := b.cfg.TelegramGroupID
-	threadID := 0
-
-	// Cari harga 1 gram
-	var price1g models.GoldPrice
-	for _, p := range event.Prices {
-		if p.Gram == 1 {
-			price1g = p
-			break
-		}
-	}
-
-	if price1g.BuyPrice == 0 {
-		return fmt.Errorf("no 1 gram price found")
-	}
-
-	bbChangeAmt := event.BuybackChangeAmt
-	if bbChangeAmt < 0 {
-		bbChangeAmt = -bbChangeAmt
-	}
-
-	importHelper := func(n int64) string {
-		if n < 0 {
-			n = -n
-		}
-		s := fmt.Sprintf("%d", n)
-		var parts []string
-		for i := len(s); i > 0; i -= 3 {
-			start := i - 3
-			if start < 0 {
-				start = 0
-			}
-			parts = append([]string{s[start:i]}, parts...)
-		}
-		return strings.Join(parts, ".")
-	}
-
-	// Deteksi panah trend (Buy)
-	trendArrow := "▬"
-	switch event.Trend {
-	case "up":
-		trendArrow = "▲"
-	case "naik":
-		trendArrow = "▲"
-	case "down":
-		trendArrow = "▼"
-	case "turun":
-		trendArrow = "▼"
-	}
-
-	// Deteksi panah trend (Buyback)
-	bbTrendArrow := "▬"
-	switch event.BuybackTrend {
-	case "up":
-		bbTrendArrow = "▲"
-	case "naik":
-		bbTrendArrow = "▲"
-	case "down":
-		bbTrendArrow = "▼"
-	case "turun":
-		bbTrendArrow = "▼"
-	}
-
-	dateFmt := event.Date
-	if event.UpdateTime != "" {
-		dateFmt = event.UpdateTime
-	} else if parsed, err := time.Parse("2006-01-02", event.Date); err == nil {
-		dateFmt = parsed.Format("02 Jan 2006")
-	}
-
-	msgText := fmt.Sprintf(
-		"Harga Emas Antam Hari Ini 🪙\n\n"+
-			"📅 %s\n"+
-			"💰 Rp %s / gram %s (Rp %s)\n"+
-			"🔄 Rp %s / gram %s (Rp %s)\n",
-		dateFmt,
-		importHelper(price1g.BuyPrice), trendArrow, importHelper(event.ChangeAmt),
-		importHelper(price1g.SellPrice), bbTrendArrow, importHelper(event.BuybackChangeAmt),
-	)
-
-	b.sendText(chatID, threadID, msgText)
-	log.Printf("[broadcaster] ✅ Sent scrape notification to chat %d (thread %d)", chatID, threadID)
-
-	return nil
 }
 
 // SendScrapeFailureNotification mengirim notifikasi kegagalan scraping.
