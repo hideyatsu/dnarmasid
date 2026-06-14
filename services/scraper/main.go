@@ -153,15 +153,14 @@ func main() {
 				continue
 			}
 
-			// Publish hasil ke Redis → ai, media, telegram (Fan-out)
+			// Publish hasil ke Redis → ai, media (Fan-out)
+			// NOTE: Telegram bot tidak lagi dikirim langsung — hanya via content.ready
+			// dari ai-generator untuk menghindari duplikasi pesan.
 			if err := q.Publish(queue.KeyGoldScrapedAI, event); err != nil {
 				log.Printf("[scraper] ❌ Failed to publish to ai: %v", err)
 			}
 			if err := q.Publish(queue.KeyGoldScrapedMedia, event); err != nil {
 				log.Printf("[scraper] ❌ Failed to publish to media: %v", err)
-			}
-			if err := q.Publish(queue.KeyGoldScrapedBot, event); err != nil {
-				log.Printf("[scraper] ❌ Failed to publish to telegram: %v", err)
 			}
 			if err := q.Publish(queue.KeyGoldScrapedThreads, event); err != nil {
 				log.Printf("[scraper] ❌ Failed to publish to threads: %v", err)
