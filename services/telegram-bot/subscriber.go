@@ -17,14 +17,21 @@ import (
 )
 
 type CommandHandler struct {
-	cfg *config.Config
-	db  *gorm.DB
-	bot *tgbotapi.BotAPI
-	q   *queue.Client
+	cfg      *config.Config
+	db       *gorm.DB
+	bot      *tgbotapi.BotAPI
+	q        *queue.Client
+	pipeline *PipelineHandler
 }
 
 func NewCommandHandler(cfg *config.Config, db *gorm.DB, bot *tgbotapi.BotAPI, q *queue.Client) *CommandHandler {
-	return &CommandHandler{cfg: cfg, db: db, bot: bot, q: q}
+	return &CommandHandler{
+		cfg:      cfg,
+		db:       db,
+		bot:      bot,
+		q:        q,
+		pipeline: NewPipelineHandler(cfg, db, bot, q),
+	}
 }
 
 // Listen mendengarkan update/command dari user Telegram
@@ -70,10 +77,8 @@ func (h *CommandHandler) handleMessage(msg *tgbotapi.Message) {
 		h.handleStatus(chatID)
 	case "help":
 		h.handleHelp(chatID)
-	case "scrape":
-		h.handleScrape(chatID)
-	case "threads":
-		h.handleThreads(chatID, msg.CommandArguments())
+	case "admin":
+		h.handleAdmin(chatID, msg.CommandArguments())
 	default:
 		if msg.IsCommand() {
 			h.send(chatID, "❓ Command tidak dikenal. Ketik /help untuk daftar command.")
@@ -156,8 +161,7 @@ func (h *CommandHandler) handleHelp(chatID int64) {
 		"/help — Tampilkan bantuan\n"
 
 	if chatID == h.cfg.TelegramAdminChatID {
-		text += "/scrape — [Admin] Trigger manual scrape\n" +
-			"/threads — [Admin] Review pending Threads content\n"
+		text += "/admin — [Admin] Akses command admin\n"
 	}
 
 	text += "\n📲 Follow kami: @DnarMasID"
@@ -165,6 +169,62 @@ func (h *CommandHandler) handleHelp(chatID int64) {
 	msg := tgbotapi.NewMessage(chatID, text)
 	msg.ParseMode = "Markdown"
 	h.bot.Send(msg)
+}
+
+func (h *CommandHandler) handleAdmin(chatID int64, args string) {
+	if chatID != h.cfg.TelegramAdminChatID {
+		h.send(chatID, "❌ Maaf, command ini hanya untuk Admin.")
+		return
+	}
+
+	parts := strings.Fields(args)
+	if len(parts) == 0 {
+		text := "⚙️ *Admin Commands*\n\n" +
+			"`/admin scrape` — Trigger manual scrape\n" +
+			"`/admin threads` — Review pending Threads content\n" +
+			"`/admin pipeline` — Trigger pipeline steps modular\n" +
+			"`/admin help` — Tampilkan bantuan admin\n\n" +
+			"Gunakan dengan hati-hati."
+		h.send(chatID, text)
+		return
+	}
+
+	action := strings.ToLower(parts[0])
+	subArgs := ""
+	if len(parts) > 1 {
+		subArgs = strings.Join(parts[1:], " ")
+	}
+
+	switch action {
+	case "scrape":
+		h.handleScrape(chatID)
+	case "threads":
+		h.handleThreads(chatID, subArgs)
+	case "pipeline":
+		h.pipeline.Handle(chatID, subArgs)
+	case "help":
+		h.handleAdminHelp(chatID)
+	default:
+		h.send(chatID, "❌ Subcommand tidak dikenal. Ketik `/admin` untuk daftar.")
+	}
+}
+
+func (h *CommandHandler) handleAdminHelp(chatID int64) {
+	text := "⚙️ *Admin Commands — Detail*\n\n" +
+		"*Scrape:*\n" +
+		"`/admin scrape` — Ambil data harga Antam baru\n\n" +
+		"*Threads:*\n" +
+		"`/admin threads` — List pending konten threads\n" +
+		"`/admin threads <nomor>` — Preview full konten\n\n" +
+		"*Pipeline:*\n" +
+		"`/admin pipeline` — Bantuan pipeline\n" +
+		"`/admin pipeline scrape` — Trigger scraper\n" +
+		"`/admin pipeline ai` — Trigger AI generator\n" +
+		"`/admin pipeline media` — Trigger media generator\n" +
+		"`/admin pipeline threads` — Trigger threads generator\n" +
+		"`/admin pipeline publish` — Trigger repliz uploader\n" +
+		"`/admin pipeline status` — Cek status pipeline\n"
+	h.send(chatID, text)
 }
 
 func (h *CommandHandler) handleScrape(chatID int64) {
