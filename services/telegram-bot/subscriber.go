@@ -77,6 +77,8 @@ func (h *CommandHandler) handleMessage(msg *tgbotapi.Message) {
 		h.handleStatus(chatID)
 	case "help":
 		h.handleHelp(chatID)
+	case "admin":
+		h.handleAdmin(chatID)
 	case "scrape":
 		h.handleScrape(chatID)
 	case "threads":
@@ -169,6 +171,27 @@ func (h *CommandHandler) handleHelp(chatID int64) {
 	msg := tgbotapi.NewMessage(chatID, text)
 	msg.ParseMode = "Markdown"
 	h.bot.Send(msg)
+}
+
+func (h *CommandHandler) handleAdmin(chatID int64) {
+	if chatID != h.cfg.TelegramAdminChatID {
+		return // silent drop for non-admin
+	}
+
+	text := "⚙️ *Admin Commands*\n\n" +
+		"*Scraper:*\n" +
+		"`/scrape` — Trigger manual scrape harga Antam\n\n" +
+		"*Threads:*\n" +
+		"`/threads` — List pending konten Threads\n" +
+		"`/threads <nomor>` — Preview full konten\n\n" +
+		"*Pipeline:* (modular step-by-step)\n" +
+		"`/pipeline scrape` — Trigger scraper\n" +
+		"`/pipeline ai` — Trigger AI generator (caption)\n" +
+		"`/pipeline media` — Trigger media generator (infografis)\n" +
+		"`/pipeline threads` — Trigger threads generator\n" +
+		"`/pipeline publish` — Trigger repliz uploader (posting sosmed)\n" +
+		"`/pipeline status` — Cek status pipeline hari ini\n"
+	h.send(chatID, text)
 }
 
 func (h *CommandHandler) handleScrape(chatID int64) {
