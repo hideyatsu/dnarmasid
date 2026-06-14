@@ -361,9 +361,10 @@ func formatPriceIDR(price int64) string {
 	return result.String()
 }
 
-// registerBotCommands registers only public commands to Telegram API (setMyCommands).
-// Admin commands (/scrape, /threads, /pipeline) are intentionally NOT registered
-// so they are hidden from the command menu for non-admin users.
+// registerBotCommands registers bot commands to Telegram API (setMyCommands).
+// Only public commands and /admin (command listing) are registered.
+// Individual admin commands (/scrape, /threads, /pipeline) are intentionally
+// omitted so they stay hidden from the command menu.
 func registerBotCommands(bot *tgbotapi.BotAPI) error {
 	commands := []tgbotapi.BotCommand{
 		{Command: "start", Description: "Mulai bot"},
@@ -371,6 +372,7 @@ func registerBotCommands(bot *tgbotapi.BotAPI) error {
 		{Command: "unsubscribe", Description: "Berhenti berlangganan"},
 		{Command: "status", Description: "Cek status langganan"},
 		{Command: "help", Description: "Tampilkan bantuan"},
+		{Command: "admin", Description: "Daftar command admin"},
 	}
 
 	config := tgbotapi.NewSetMyCommands(commands...)
