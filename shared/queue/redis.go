@@ -18,7 +18,6 @@ const (
 	KeyJobScrape                = "job.scrape"                 // scheduler → scraper
 	KeyGoldScrapedAI            = "gold.scraped.ai"            // scraper → ai-generator
 	KeyGoldScrapedMedia         = "gold.scraped.media"         // scraper → media-generator
-	KeyGoldScrapedBot           = "gold.scraped.telegram"      // scraper → telegram-bot
 	KeyContentReady             = "content.ready"              // ai-generator → telegram-bot
 	KeyMediaReady               = "media.ready"                // media-generator → telegram-bot
 	KeyScrapeFailed             = "scrape.failed"              // scraper → telegram-bot

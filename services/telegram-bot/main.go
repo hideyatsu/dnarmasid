@@ -93,28 +93,8 @@ func main() {
 		}
 	}()
 
-	// ─── Goroutine 4: Consume gold.scraped → kirim notifikasi awal ke admin
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		log.Printf("[telegram-bot] 📡 Listening %s queue...", queue.KeyGoldScrapedBot)
-		for {
-			select {
-			case <-quit:
-				return
-			default:
-				var event models.GoldScrapedEvent
-				err := q.ConsumeJSON(queue.KeyGoldScrapedBot, 5*time.Second, &event)
-				if err != nil {
-					continue
-				}
-				log.Printf("[telegram-bot] 📥 gold.scraped received: date=%s", event.Date)
-				if err := broadcaster.SendScrapeNotification(&event); err != nil {
-					log.Printf("[telegram-bot] ❌ SendScrapeNotification error: %v", err)
-				}
-			}
-		}
-	}()
+	// ─── Goroutine 4 (REMOVED): gold.scraped.telegram — queue sudah tidak dipublish
+	// Bot hanya menerima konten via content.ready dari ai-generator (lihat Goroutine 2)
 
 	// ─── Goroutine 5: Consume scrape.failed → kirim alert ke admin
 	wg.Add(1)
