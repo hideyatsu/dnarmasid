@@ -28,8 +28,7 @@ func NewPipelineHandler(cfg *config.Config, db *gorm.DB, bot *tgbotapi.BotAPI, q
 
 func (p *PipelineHandler) Handle(chatID int64, args string) {
 	if chatID != p.cfg.TelegramAdminChatID {
-		p.send(chatID, "❌ Maaf, command ini hanya untuk Admin.")
-		return
+		return // silent drop for non-admin
 	}
 
 	parts := strings.Fields(args)
@@ -362,7 +361,9 @@ func formatPriceIDR(price int64) string {
 	return result.String()
 }
 
-// registerBotCommands registers all bot commands to Telegram API (setMyCommands)
+// registerBotCommands registers only public commands to Telegram API (setMyCommands).
+// Admin commands (/scrape, /threads, /pipeline) are intentionally NOT registered
+// so they are hidden from the command menu for non-admin users.
 func registerBotCommands(bot *tgbotapi.BotAPI) error {
 	commands := []tgbotapi.BotCommand{
 		{Command: "start", Description: "Mulai bot"},
@@ -370,7 +371,6 @@ func registerBotCommands(bot *tgbotapi.BotAPI) error {
 		{Command: "unsubscribe", Description: "Berhenti berlangganan"},
 		{Command: "status", Description: "Cek status langganan"},
 		{Command: "help", Description: "Tampilkan bantuan"},
-		{Command: "admin", Description: "[Admin] Akses command admin"},
 	}
 
 	config := tgbotapi.NewSetMyCommands(commands...)

@@ -77,8 +77,12 @@ func (h *CommandHandler) handleMessage(msg *tgbotapi.Message) {
 		h.handleStatus(chatID)
 	case "help":
 		h.handleHelp(chatID)
-	case "admin":
-		h.handleAdmin(chatID, msg.CommandArguments())
+	case "scrape":
+		h.handleScrape(chatID)
+	case "threads":
+		h.handleThreads(chatID, msg.CommandArguments())
+	case "pipeline":
+		h.pipeline.Handle(chatID, msg.CommandArguments())
 	default:
 		if msg.IsCommand() {
 			h.send(chatID, "❓ Command tidak dikenal. Ketik /help untuk daftar command.")
@@ -160,10 +164,6 @@ func (h *CommandHandler) handleHelp(chatID int64) {
 		"/status — Cek status langganan\n" +
 		"/help — Tampilkan bantuan\n"
 
-	if chatID == h.cfg.TelegramAdminChatID {
-		text += "/admin — [Admin] Akses command admin\n"
-	}
-
 	text += "\n📲 Follow kami: @DnarMasID"
 
 	msg := tgbotapi.NewMessage(chatID, text)
@@ -171,66 +171,9 @@ func (h *CommandHandler) handleHelp(chatID int64) {
 	h.bot.Send(msg)
 }
 
-func (h *CommandHandler) handleAdmin(chatID int64, args string) {
-	if chatID != h.cfg.TelegramAdminChatID {
-		h.send(chatID, "❌ Maaf, command ini hanya untuk Admin.")
-		return
-	}
-
-	parts := strings.Fields(args)
-	if len(parts) == 0 {
-		text := "⚙️ *Admin Commands*\n\n" +
-			"`/admin scrape` — Trigger manual scrape\n" +
-			"`/admin threads` — Review pending Threads content\n" +
-			"`/admin pipeline` — Trigger pipeline steps modular\n" +
-			"`/admin help` — Tampilkan bantuan admin\n\n" +
-			"Gunakan dengan hati-hati."
-		h.send(chatID, text)
-		return
-	}
-
-	action := strings.ToLower(parts[0])
-	subArgs := ""
-	if len(parts) > 1 {
-		subArgs = strings.Join(parts[1:], " ")
-	}
-
-	switch action {
-	case "scrape":
-		h.handleScrape(chatID)
-	case "threads":
-		h.handleThreads(chatID, subArgs)
-	case "pipeline":
-		h.pipeline.Handle(chatID, subArgs)
-	case "help":
-		h.handleAdminHelp(chatID)
-	default:
-		h.send(chatID, "❌ Subcommand tidak dikenal. Ketik `/admin` untuk daftar.")
-	}
-}
-
-func (h *CommandHandler) handleAdminHelp(chatID int64) {
-	text := "⚙️ *Admin Commands — Detail*\n\n" +
-		"*Scrape:*\n" +
-		"`/admin scrape` — Ambil data harga Antam baru\n\n" +
-		"*Threads:*\n" +
-		"`/admin threads` — List pending konten threads\n" +
-		"`/admin threads <nomor>` — Preview full konten\n\n" +
-		"*Pipeline:*\n" +
-		"`/admin pipeline` — Bantuan pipeline\n" +
-		"`/admin pipeline scrape` — Trigger scraper\n" +
-		"`/admin pipeline ai` — Trigger AI generator\n" +
-		"`/admin pipeline media` — Trigger media generator\n" +
-		"`/admin pipeline threads` — Trigger threads generator\n" +
-		"`/admin pipeline publish` — Trigger repliz uploader\n" +
-		"`/admin pipeline status` — Cek status pipeline\n"
-	h.send(chatID, text)
-}
-
 func (h *CommandHandler) handleScrape(chatID int64) {
 	if chatID != h.cfg.TelegramAdminChatID {
-		h.send(chatID, "❌ Maaf, command ini hanya untuk Admin.")
-		return
+		return // silent drop for non-admin
 	}
 
 	h.send(chatID, "⏳ Memulai proses scraping Antam secara manual...")
@@ -258,8 +201,7 @@ func (h *CommandHandler) send(chatID int64, text string) {
 
 func (h *CommandHandler) handleThreads(chatID int64, args string) {
 	if chatID != h.cfg.TelegramAdminChatID {
-		h.send(chatID, "❌ Maaf, command ini hanya untuk Admin.")
-		return
+		return // silent drop for non-admin
 	}
 
 	// If args is a number, show detail
