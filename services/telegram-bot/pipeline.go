@@ -370,9 +370,7 @@ func registerBotCommands(bot *tgbotapi.BotAPI) error {
 		{Command: "unsubscribe", Description: "Berhenti berlangganan"},
 		{Command: "status", Description: "Cek status langganan"},
 		{Command: "help", Description: "Tampilkan bantuan"},
-		{Command: "scrape", Description: "[Admin] Trigger manual scrape"},
-		{Command: "threads", Description: "[Admin] Review pending Threads"},
-		{Command: "pipeline", Description: "[Admin] Trigger pipeline steps modular"},
+		{Command: "admin", Description: "[Admin] Akses command admin"},
 	}
 
 	config := tgbotapi.NewSetMyCommands(commands...)
