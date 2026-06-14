@@ -60,6 +60,12 @@ func processEvent(client *repliz.Client, platforms []PlatformTarget, event model
 		return
 	}
 
+	// Guardrail: reject empty/invalid events (e.g. from scraper guardrail skip)
+	if event.Date == "" || event.PriceID == 0 {
+		log.Printf("[repliz-uploader] ⚠️ Invalid event (Date=%q, PriceID=%d). Skipping to prevent stale post.", event.Date, event.PriceID)
+		return
+	}
+
 	// Fallback caption
 	description := event.Caption
 	if description == "" {
