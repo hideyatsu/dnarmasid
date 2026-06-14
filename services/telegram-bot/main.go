@@ -35,6 +35,13 @@ func main() {
 	broadcaster := NewBroadcaster(cfg, database, bot)
 	handler := NewCommandHandler(cfg, database, bot, q)
 
+	// Register command menu (setMyCommands)
+	if err := registerBotCommands(bot); err != nil {
+		log.Printf("[telegram-bot] ⚠️ Failed to register commands: %v", err)
+	} else {
+		log.Printf("[telegram-bot] ✅ Bot commands registered")
+	}
+
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 

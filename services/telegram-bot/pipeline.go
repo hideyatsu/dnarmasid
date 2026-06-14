@@ -361,3 +361,21 @@ func formatPriceIDR(price int64) string {
 	}
 	return result.String()
 }
+
+// registerBotCommands registers all bot commands to Telegram API (setMyCommands)
+func registerBotCommands(bot *tgbotapi.BotAPI) error {
+	commands := []tgbotapi.BotCommand{
+		{Command: "start", Description: "Mulai bot"},
+		{Command: "subscribe", Description: "Berlangganan update harian"},
+		{Command: "unsubscribe", Description: "Berhenti berlangganan"},
+		{Command: "status", Description: "Cek status langganan"},
+		{Command: "help", Description: "Tampilkan bantuan"},
+		{Command: "scrape", Description: "[Admin] Trigger manual scrape"},
+		{Command: "threads", Description: "[Admin] Review pending Threads"},
+		{Command: "pipeline", Description: "[Admin] Trigger pipeline steps modular"},
+	}
+
+	config := tgbotapi.NewSetMyCommands(commands...)
+	_, err := bot.Request(config)
+	return err
+}
