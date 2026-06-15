@@ -6,6 +6,7 @@ import (
 
 	"dnarmasid/shared/config"
 	"dnarmasid/shared/models"
+	"dnarmasid/shared/queue"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"gorm.io/gorm"
