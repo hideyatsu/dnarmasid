@@ -136,6 +136,7 @@ func (t *ProgressTracker) GetStaleSessions(timeout time.Duration) []*RepublishSe
 // EditMessage updates the progress message in Telegram
 func (t *ProgressTracker) EditMessage(sess *RepublishSession) {
 	if sess == nil {
+		log.Printf("[progress-tracker] ⚠️ EditMessage called with nil session")
 		return
 	}
 
@@ -144,7 +145,9 @@ func (t *ProgressTracker) EditMessage(sess *RepublishSession) {
 	edit := tgbotapi.NewEditMessageText(sess.ChatID, sess.MessageID, text)
 	edit.ParseMode = "Markdown"
 	if _, err := t.bot.Send(edit); err != nil {
-		fmt.Printf("[progress-tracker] ⚠️ edit message error: %v\n", err)
+		log.Printf("[progress-tracker] ⚠️ edit message error: %v", err)
+	} else {
+		log.Printf("[progress-tracker] ✅ Message edited: chat_id=%d, msg_id=%d", sess.ChatID, sess.MessageID)
 	}
 }
 
@@ -153,7 +156,9 @@ func (t *ProgressTracker) SendToAdmin(chatID int64, text string) {
 	msg := tgbotapi.NewMessage(chatID, text)
 	msg.ParseMode = "Markdown"
 	if _, err := t.bot.Send(msg); err != nil {
-		fmt.Printf("[progress-tracker] ⚠️ send to admin error: %v\n", err)
+		log.Printf("[progress-tracker] ⚠️ send to admin error: %v", err)
+	} else {
+		log.Printf("[progress-tracker] ✅ Admin notified: chat_id=%d", chatID)
 	}
 }
 
