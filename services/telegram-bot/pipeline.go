@@ -473,7 +473,7 @@ func formatPriceIDR(price int64) string {
 
 // registerBotCommands registers bot commands to Telegram API (setMyCommands).
 // Admin-only commands (/admin, /scrape, /threads, /republish) are intentionally
-// omitted — access only from within /admin panel.
+// omitted so they stay hidden from the public command menu.
 func registerBotCommands(bot *tgbotapi.BotAPI) error {
 	commands := []tgbotapi.BotCommand{
 		{Command: "start", Description: "Mulai bot"},
