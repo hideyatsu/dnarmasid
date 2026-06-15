@@ -85,6 +85,8 @@ func (h *CommandHandler) handleMessage(msg *tgbotapi.Message) {
 		h.handleThreads(chatID, msg.CommandArguments())
 	case "pipeline":
 		h.pipeline.Handle(chatID, msg.CommandArguments())
+	case "republish":
+		h.pipeline.Handle(chatID, "republish")
 	default:
 		if msg.IsCommand() {
 			h.send(chatID, "❓ Command tidak dikenal. Ketik /help untuk daftar command.")
