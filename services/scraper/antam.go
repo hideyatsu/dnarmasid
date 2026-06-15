@@ -735,7 +735,7 @@ func (s *AntamScraper) saveScreenshotToDB(priceID uint, filename, publicURL stri
 			MediaType: models.MediaTypeImage,
 			FileName:  filename,
 			PublicURL: publicURL,
-			Status:    "done",
+			Status:    "pending",
 		}
 		if err := s.db.Create(&media).Error; err != nil {
 			log.Printf("[scraper] ❌ Failed to save screenshot %s to DB: %v", filename, err)
@@ -745,7 +745,7 @@ func (s *AntamScraper) saveScreenshotToDB(priceID uint, filename, publicURL stri
 	} else if result.Error == nil {
 		// UPDATE existing
 		existing.PublicURL = publicURL
-		existing.Status = "done"
+		existing.Status = "pending"
 		if err := s.db.Save(&existing).Error; err != nil {
 			log.Printf("[scraper] ❌ Failed to update screenshot %s in DB: %v", filename, err)
 		} else {
