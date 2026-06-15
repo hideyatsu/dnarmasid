@@ -72,7 +72,7 @@ func main() {
 				if err != nil {
 					continue
 				}
-				log.Printf("[telegram-bot] 📥 content.ready received: date=%s", event.Date)
+				log.Printf("[telegram-bot] 📥 content.ready received: date=%s, price_id=%d", event.Date, event.PriceID)
 
 				// Send caption via broadcaster (normal pipeline)
 				if err := broadcaster.SendContent(&event); err != nil {
@@ -80,7 +80,12 @@ func main() {
 				}
 
 				// If this is a republish session, update progress + send to admin
-				if sess := tracker.UpdateStep(event.PriceID, "AI Caption", "done", "Caption generated"); sess != nil {
+				sess := tracker.GetSession(event.PriceID)
+				if sess == nil {
+					log.Printf("[telegram-bot] ⚠️ No republish session found for price_id=%d", event.PriceID)
+				}
+				sess = tracker.UpdateStep(event.PriceID, "AI Caption", "done", "Caption generated")
+				if sess != nil {
 					tracker.EditMessage(sess)
 
 					// Send caption to admin
@@ -109,7 +114,7 @@ func main() {
 				if err != nil {
 					continue
 				}
-				log.Printf("[telegram-bot] 📥 media.ready received: %s (%s)", event.FileName, event.MediaType)
+				log.Printf("[telegram-bot] 📥 media.ready received: %s (%s), price_id=%d", event.FileName, event.MediaType, event.PriceID)
 
 				// Send media via broadcaster (normal pipeline)
 				if err := broadcaster.SendMedia(&event); err != nil {
@@ -118,7 +123,11 @@ func main() {
 
 				// If this is a republish session, update progress + send media to admin
 				if event.MediaType == models.MediaTypeImage {
-					sess := tracker.UpdateStep(event.PriceID, "Media Render", "done", "Infografis uploaded")
+					sess := tracker.GetSession(event.PriceID)
+					if sess == nil {
+						log.Printf("[telegram-bot] ⚠️ media.ready: No republish session for price_id=%d", event.PriceID)
+					}
+					sess = tracker.UpdateStep(event.PriceID, "Media Render", "done", "Infografis uploaded")
 					if sess != nil {
 						tracker.EditMessage(sess)
 
@@ -155,10 +164,14 @@ func main() {
 				if err != nil {
 					continue
 				}
-				log.Printf("[telegram-bot] 📥 bot.media.done received: date=%s", event.Date)
+				log.Printf("[telegram-bot] 📥 bot.media.done received: date=%s, price_id=%d", event.Date, event.PriceID)
 
 				// If this is a republish session, mark Repliz as done
-				sess := tracker.UpdateStep(event.PriceID, "Repliz Upload", "done", "Queued for posting")
+				sess := tracker.GetSession(event.PriceID)
+				if sess == nil {
+					log.Printf("[telegram-bot] ⚠️ bot.media.done: No republish session for price_id=%d", event.PriceID)
+				}
+				sess = tracker.UpdateStep(event.PriceID, "Repliz Upload", "done", "Queued for posting")
 				if sess != nil {
 					tracker.EditMessage(sess)
 					tracker.SendToAdmin(sess.ChatID, fmt.Sprintf("🚀 *Republish Complete* — %s\n\n✅ Semua tahap selesai. Proses posting berjalan otomatis ke Instagram/Facebook.", event.Date))
