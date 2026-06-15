@@ -165,9 +165,6 @@ func main() {
 			if err := q.Publish(queue.KeyGoldScrapedAI, event); err != nil {
 				log.Printf("[scraper] ❌ Failed to publish to ai: %v", err)
 			}
-			if err := q.Publish(queue.KeyGoldScrapedMedia, event); err != nil {
-				log.Printf("[scraper] ❌ Failed to publish to media: %v", err)
-			}
 			if err := q.Publish(queue.KeyGoldScrapedThreads, event); err != nil {
 				log.Printf("[scraper] ❌ Failed to publish to threads: %v", err)
 			}

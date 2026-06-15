@@ -50,8 +50,14 @@ func main() {
 				log.Printf("[ai-generator] ❌ Failed to publish content.ready: %v", err)
 				continue
 			}
-
 			log.Printf("[ai-generator] ✅ content.ready published for %s", event.Date)
+
+			// Serial pipeline: publish to gold.processed so media-generator picks up
+			if err := q.Publish(queue.KeyGoldProcessed, event); err != nil {
+				log.Printf("[ai-generator] ❌ Failed to publish gold.processed: %v", err)
+			} else {
+				log.Printf("[ai-generator] ✅ gold.processed published for %s (media-generator next)", event.Date)
+			}
 		}
 	}()
 

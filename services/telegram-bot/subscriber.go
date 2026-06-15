@@ -6,11 +6,11 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"dnarmasid/shared/config"
 	"dnarmasid/shared/models"
 	"dnarmasid/shared/queue"
-	"time"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"gorm.io/gorm"
@@ -22,15 +22,17 @@ type CommandHandler struct {
 	bot      *tgbotapi.BotAPI
 	q        *queue.Client
 	pipeline *PipelineHandler
+	tracker  *ProgressTracker
 }
 
-func NewCommandHandler(cfg *config.Config, db *gorm.DB, bot *tgbotapi.BotAPI, q *queue.Client) *CommandHandler {
+func NewCommandHandler(cfg *config.Config, db *gorm.DB, bot *tgbotapi.BotAPI, q *queue.Client, tracker *ProgressTracker) *CommandHandler {
 	return &CommandHandler{
 		cfg:      cfg,
 		db:       db,
 		bot:      bot,
 		q:        q,
-		pipeline: NewPipelineHandler(cfg, db, bot, q),
+		tracker:  tracker,
+		pipeline: NewPipelineHandler(cfg, db, bot, q, tracker),
 	}
 }
 
@@ -83,8 +85,8 @@ func (h *CommandHandler) handleMessage(msg *tgbotapi.Message) {
 		h.handleScrape(chatID)
 	case "threads":
 		h.handleThreads(chatID, msg.CommandArguments())
-	case "pipeline":
-		h.pipeline.Handle(chatID, msg.CommandArguments())
+	case "republish":
+		h.handleRepublish(chatID)
 	default:
 		if msg.IsCommand() {
 			h.send(chatID, "❓ Command tidak dikenal. Ketik /help untuk daftar command.")
@@ -178,20 +180,22 @@ func (h *CommandHandler) handleAdmin(chatID int64) {
 		return // silent drop for non-admin
 	}
 
-	text := "⚙️ *Admin Commands*\n\n" +
+	text := "⚙️ *Admin Panel — DnarMasID*\n\n" +
 		"*Scraper:*\n" +
-		"`/scrape` — Trigger manual scrape harga Antam\n\n" +
+		"/scrape — Trigger manual scrape harga Antam\n\n" +
 		"*Threads:*\n" +
-		"`/threads` — List pending konten Threads\n" +
-		"`/threads <nomor>` — Preview full konten\n\n" +
-		"*Pipeline:* (modular step-by-step)\n" +
-		"`/pipeline scrape` — Trigger scraper\n" +
-		"`/pipeline ai` — Trigger AI generator (caption)\n" +
-		"`/pipeline media` — Trigger media generator (infografis)\n" +
-		"`/pipeline threads` — Trigger threads generator\n" +
-		"`/pipeline publish` — Trigger repliz uploader (posting sosmed)\n" +
-		"`/pipeline status` — Cek status pipeline hari ini\n"
+		"/threads — List pending konten Threads\n" +
+		"/threads <nomor> — Preview full konten\n\n" +
+		"*Republish:*\n" +
+		"/republish — Republish full pipeline (AI → Media → Posting)\n"
 	h.send(chatID, text)
+}
+
+func (h *CommandHandler) handleRepublish(chatID int64) {
+	if chatID != h.cfg.TelegramAdminChatID {
+		return // silent drop for non-admin
+	}
+	h.pipeline.Handle(chatID, "republish")
 }
 
 func (h *CommandHandler) handleScrape(chatID int64) {
@@ -212,14 +216,6 @@ func (h *CommandHandler) handleScrape(chatID int64) {
 	}
 
 	h.send(chatID, "✅ Job scraping berhasil dikirim ke antrean. Mohon tunggu notifikasi hasilnya.")
-}
-
-func (h *CommandHandler) send(chatID int64, text string) {
-	msg := tgbotapi.NewMessage(chatID, text)
-	msg.ParseMode = "Markdown"
-	if _, err := h.bot.Send(msg); err != nil {
-		log.Printf("[command-handler] ⚠️ send error: %v", err)
-	}
 }
 
 func (h *CommandHandler) handleThreads(chatID int64, args string) {
@@ -288,4 +284,12 @@ func (h *CommandHandler) handleThreadsDetail(chatID int64, num int) {
 	msg := tgbotapi.NewMessage(chatID, text)
 	msg.ParseMode = "Markdown"
 	h.bot.Send(msg)
+}
+
+func (h *CommandHandler) send(chatID int64, text string) {
+	msg := tgbotapi.NewMessage(chatID, text)
+	msg.ParseMode = "Markdown"
+	if _, err := h.bot.Send(msg); err != nil {
+		log.Printf("[command-handler] ⚠️ send error: %v", err)
+	}
 }
