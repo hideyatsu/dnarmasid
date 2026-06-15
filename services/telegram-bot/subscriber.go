@@ -182,12 +182,12 @@ func (h *CommandHandler) handleAdmin(chatID int64) {
 
 	text := "⚙️ *Admin Panel — DnarMasID*\n\n" +
 		"*Scraper:*\n" +
-		"`/scrape` — Trigger manual scrape harga Antam\n\n" +
+		"/scrape — Trigger manual scrape harga Antam\n\n" +
 		"*Threads:*\n" +
-		"`/threads` — List pending konten Threads\n" +
-		"`/threads <nomor>` — Preview full konten\n\n" +
+		"/threads — List pending konten Threads\n" +
+		"/threads <nomor> — Preview full konten\n\n" +
 		"*Republish:*\n" +
-		"`/republish` — Republish full pipeline (AI → Media → Posting)\n"
+		"/republish — Republish full pipeline (AI → Media → Posting)\n"
 	h.send(chatID, text)
 }
 
