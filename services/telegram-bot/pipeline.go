@@ -49,6 +49,8 @@ func (p *PipelineHandler) Handle(chatID int64, args string) {
 		p.triggerThreads(chatID)
 	case "publish":
 		p.triggerPublish(chatID)
+	case "republish":
+		p.triggerRepublish(chatID)
 	case "status":
 		p.showStatus(chatID)
 	default:
@@ -63,6 +65,7 @@ func (p *PipelineHandler) showHelp(chatID int64) {
 		"`/pipeline media` — Trigger media generator saja (skip AI)\n" +
 		"`/pipeline threads` — Trigger threads generator\n" +
 		"`/pipeline publish` — Trigger repliz uploader (posting ke sosmed)\n" +
+		"`/republish` — Republish pipeline lengkap (AI → Media → Posting)\n" +
 		"`/pipeline status` — Cek status pipeline hari ini\n\n" +
 		"Pipeline serial: scrape → ai → media → publish.\n" +
 		"Gunakan dengan hati-hati."
@@ -72,33 +75,95 @@ func (p *PipelineHandler) showHelp(chatID int64) {
 	p.bot.Send(msg)
 }
 
-// getLatestEvent builds a minimal GoldScrapedEvent from the latest DB record
+// getLatestEvent builds a complete GoldScrapedEvent from latest DB record
+// Uses 1g Antam as base for change calculation + screenshots from generated_media if available
 func (p *PipelineHandler) getLatestEvent() (*models.GoldScrapedEvent, error) {
-	var latestPrice models.GoldPrice
-	if err := p.db.Order("date DESC, gram ASC").First(&latestPrice).Error; err != nil {
-		return nil, fmt.Errorf("tidak ada data harga di database: %w", err)
+	// Get latest 1g Antam price
+	var today models.GoldPrice
+	if err := p.db.Where("gram = ?", 1.0).Order("date DESC").First(&today).Error; err != nil {
+		return nil, fmt.Errorf("tidak ada data harga 1g Antam di database: %w", err)
 	}
 
+	// Get all grams for today
 	var prices []models.GoldPrice
-	p.db.Where("date = ?", latestPrice.Date).Order("gram ASC").Find(&prices)
+	p.db.Where("date = ?", today.Date).Order("gram ASC").Find(&prices)
 
 	if len(prices) == 0 {
-		return nil, fmt.Errorf("tidak ada harga untuk tanggal %s", latestPrice.Date.Format("02 Jan 2006"))
+		return nil, fmt.Errorf("tidak ada harga untuk tanggal %s", today.Date.Format("02 Jan 2006"))
 	}
 
-	dateStr := formatDate(latestPrice.Date)
+	// Get yesterday's 1g price for change calculation
+	yesterday, _ := p.getPreviousPrice(today.Date)
+	changePct, changeAmt, trend, bbChangeAmt, bbTrend := calcChange(today, yesterday)
+
+	dateStr := formatDate(today.Date)
 	var updateTimeStr string
-	if latestPrice.SourceUpdateTime != nil {
-		updateTimeStr = formatDate(*latestPrice.SourceUpdateTime) + " " + latestPrice.SourceUpdateTime.Format("15:04:05")
+	if today.SourceUpdateTime != nil {
+		updateTimeStr = formatDate(*today.SourceUpdateTime) + " " + today.SourceUpdateTime.Format("15:04:05")
+	}
+
+	// Try to get screenshot URLs from previous generated_media
+	var screenshotPriceURL, screenshotBuybackURL string
+	var heroMedia models.GeneratedMedia
+	if err := p.db.Where("price_id = ? AND file_name LIKE ?", today.ID, "hero_screenshot_%").First(&heroMedia).Error; err == nil {
+		screenshotPriceURL = heroMedia.PublicURL
+	}
+	if err := p.db.Where("price_id = ? AND file_name LIKE ?", today.ID, "screenshot_%").First(&heroMedia).Error; err == nil {
+		screenshotBuybackURL = heroMedia.PublicURL
 	}
 
 	return &models.GoldScrapedEvent{
-		Date:       dateStr,
-		UpdateTime: updateTimeStr,
-		PriceID:    prices[0].ID,
-		Prices:     prices,
-		Trend:      "stable",
+		Date:                dateStr,
+		UpdateTime:          updateTimeStr,
+		PriceID:             today.ID,
+		Prices:              prices,
+		ChangePct:           changePct,
+		ChangeAmt:           changeAmt,
+		Trend:               trend,
+		BuybackChangeAmt:    bbChangeAmt,
+		BuybackTrend:        bbTrend,
+		ScreenshotPriceURL:  screenshotPriceURL,
+		ScreenshotBuybackURL: screenshotBuybackURL,
 	}, nil
+}
+
+// getPreviousPrice fetches the 1g price from the previous trading day
+func (p *PipelineHandler) getPreviousPrice(today time.Time) (*models.GoldPrice, error) {
+	var prev models.GoldPrice
+	err := p.db.Where("date < ? AND gram = ?", today, 1.0).
+		Order("date DESC").
+		First(&prev).Error
+	if err != nil {
+		return nil, err
+	}
+	return &prev, nil
+}
+
+// calcChange computes change metrics between today and yesterday 1g prices
+func calcChange(today models.GoldPrice, yesterday *models.GoldPrice) (changePct float64, changeAmt int64, trend string, bbChangeAmt int64, bbTrend string) {
+	if yesterday == nil || yesterday.BuyPrice == 0 {
+		return 0, 0, "stable", 0, "stable"
+	}
+
+	changeAmt = today.BuyPrice - yesterday.BuyPrice
+	changePct = float64(changeAmt) / float64(yesterday.BuyPrice) * 100
+
+	trend = "stable"
+	if changeAmt > 0 {
+		trend = "up"
+	} else if changeAmt < 0 {
+		trend = "down"
+	}
+
+	bbChangeAmt = today.SellPrice - yesterday.SellPrice
+	bbTrend = "stable"
+	if bbChangeAmt > 0 {
+		bbTrend = "up"
+	} else if bbChangeAmt < 0 {
+		bbTrend = "down"
+	}
+
+	return
 }
 
 func formatDate(t time.Time) string {
@@ -141,7 +206,25 @@ func (p *PipelineHandler) triggerAI(chatID int64) {
 		return
 	}
 
-	p.send(chatID, fmt.Sprintf("⏳ Triggering AI generator untuk tanggal *%s* ...", event.Date))
+	trendEmoji := "➡️"
+	if event.Trend == "up" {
+		trendEmoji = "🟢"
+	} else if event.Trend == "down" {
+		trendEmoji = "🔴"
+	}
+
+	p.send(chatID, fmt.Sprintf(
+		"⏳ Triggering AI generator untuk tanggal *%s* ...\n\n"+
+			"💰 Buy: Rp %s | Sell: Rp %s\n"+
+			"%s Trend: *%s* | Change: Rp %s (%.2f%%)\n"+
+			"\n_Caption + media akan diproses otomatis via serial pipeline..._",
+		event.Date,
+		formatPriceIDR(event.Prices[0].BuyPrice),
+		formatPriceIDR(event.Prices[0].SellPrice),
+		trendEmoji, event.Trend,
+		formatPriceIDR(event.ChangeAmt),
+		event.ChangePct,
+	))
 
 	if err := p.q.Publish(queue.KeyGoldScrapedAI, event); err != nil {
 		p.send(chatID, "❌ Gagal publish ke queue AI: "+err.Error())
@@ -183,6 +266,46 @@ func (p *PipelineHandler) triggerThreads(chatID int64) {
 	}
 
 	p.send(chatID, fmt.Sprintf("✅ Threads generator triggered untuk *%s*. Konten akan dibuat dalam 30-60 detik.", event.Date))
+}
+
+func (p *PipelineHandler) triggerRepublish(chatID int64) {
+	event, err := p.getLatestEvent()
+	if err != nil {
+		p.send(chatID, "❌ Gagal mengambil data harga: "+err.Error())
+		return
+	}
+
+	trendEmoji := "➡️"
+	if event.Trend == "up" {
+		trendEmoji = "🟢"
+	} else if event.Trend == "down" {
+		trendEmoji = "🔴"
+	}
+
+	p.send(chatID, fmt.Sprintf(
+		"🔄 *Republish Pipeline Started*\n\n"+
+			"📅 Tanggal: *%s*\n"+
+			"💰 1g Antam: Buy Rp %s | Sell Rp %s\n"+
+			"%s Trend: *%s* | Change: Rp %s (%.2f%%)\n\n"+
+			"▸ Step 1/3: AI Caption generating...\n"+
+			"▸ Step 2/3: Infografis rendering...\n"+
+			"▸ Step 3/3: Posting ke sosmed...\n\n"+
+			"_Pipeline akan berjalan otomatis, pantau notifikasi berikutnya._",
+		event.Date,
+		formatPriceIDR(event.Prices[0].BuyPrice),
+		formatPriceIDR(event.Prices[0].SellPrice),
+		trendEmoji, event.Trend,
+		formatPriceIDR(event.ChangeAmt),
+		event.ChangePct,
+	))
+
+	// Trigger AI generator (which triggers media, then repliz via serial pipeline)
+	if err := p.q.Publish(queue.KeyGoldScrapedAI, event); err != nil {
+		p.send(chatID, "❌ Gagal publish ke queue AI: "+err.Error())
+		return
+	}
+
+	log.Printf("[pipeline-handler] 🔄 Republish triggered for %s (price_id=%d)", event.Date, event.PriceID)
 }
 
 func (p *PipelineHandler) triggerPublish(chatID int64) {
