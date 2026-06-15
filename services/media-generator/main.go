@@ -33,7 +33,7 @@ func main() {
 
 	generator := NewMediaGenerator(cfg, database, r2Uploader)
 
-	log.Printf("[media-generator] ✅ Ready. Waiting for %s events...", queue.KeyGoldScrapedMedia)
+	log.Printf("[media-generator] ✅ Ready. Waiting for %s events...", queue.KeyGoldProcessed)
 
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
@@ -45,7 +45,7 @@ func main() {
 			return
 		default:
 			var event models.GoldScrapedEvent
-			err := q.ConsumeJSON(queue.KeyGoldScrapedMedia, 5*time.Second, &event)
+			err := q.ConsumeJSON(queue.KeyGoldProcessed, 5*time.Second, &event)
 			if err != nil {
 				continue
 			}
@@ -99,21 +99,14 @@ func main() {
 						featureStokButikURL = cfg.SlideStokButikURL
 					}
 
-					// Trigger Repliz Uploader Event with Polling for AI Caption
+					// Trigger Repliz Uploader Event (Direct fetch: AI caption is already saved by ai-generator before gold.processed)
 					go func(priceID uint, date string, imgEvt *models.MediaReadyEvent, screenshotPriceURL string, screenshotBuybackURL string, ctaImageURL string, heroSlideURL string, bridgingSlideURL string, featureHargaURL string, featureStokAlertURL string, featureStokButikURL string) {
+						var content models.GeneratedContent
 						var caption string
-						// Poll for max 60 seconds (20 retries * 3s)
-						for i := 0; i < 20; i++ {
-							var content models.GeneratedContent
-							if err := database.Where("price_id = ? AND content_type = ?", priceID, models.ContentCaption).First(&content).Error; err == nil && content.ContentText != "" {
-								caption = content.ContentText
-								break
-							}
-							time.Sleep(3 * time.Second)
-						}
-
-						if caption == "" {
-							log.Printf("[media-generator] ⚠️ Could not fetch AI caption for Repliz event after polling")
+						if err := database.Where("price_id = ? AND content_type = ?", priceID, models.ContentCaption).First(&content).Error; err == nil && content.ContentText != "" {
+							caption = content.ContentText
+						} else {
+							log.Printf("[media-generator] ⚠️ Could not fetch AI caption for Repliz event: %v", err)
 						}
 
 						replizEvent := models.MediaGenerationCompletedEvent{

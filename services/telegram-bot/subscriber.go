@@ -184,10 +184,10 @@ func (h *CommandHandler) handleAdmin(chatID int64) {
 		"*Threads:*\n" +
 		"`/threads` — List pending konten Threads\n" +
 		"`/threads <nomor>` — Preview full konten\n\n" +
-		"*Pipeline:* (modular step-by-step)\n" +
+		"*Pipeline (Serial):*\n" +
 		"`/pipeline scrape` — Trigger scraper\n" +
-		"`/pipeline ai` — Trigger AI generator (caption)\n" +
-		"`/pipeline media` — Trigger media generator (infografis)\n" +
+		"`/pipeline ai` — Trigger AI generator (auto-trigger media)\n" +
+		"`/pipeline media` — Trigger media generator saja\n" +
 		"`/pipeline threads` — Trigger threads generator\n" +
 		"`/pipeline publish` — Trigger repliz uploader (posting sosmed)\n" +
 		"`/pipeline status` — Cek status pipeline hari ini\n"

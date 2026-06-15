@@ -59,12 +59,12 @@ func (p *PipelineHandler) Handle(chatID int64, args string) {
 func (p *PipelineHandler) showHelp(chatID int64) {
 	text := "⚙️ *Pipeline Manual Triggers (Admin)*\n\n" +
 		"`/pipeline scrape` — Trigger scraper (ambil data harga baru)\n" +
-		"`/pipeline ai` — Trigger AI generator (buat caption + analisis)\n" +
-		"`/pipeline media` — Trigger media generator (buat infografis + slides)\n" +
-		"`/pipeline threads` — Trigger threads generator (buat konten threads)\n" +
+		"`/pipeline ai` — Trigger AI generator → auto-trigger media generator\n" +
+		"`/pipeline media` — Trigger media generator saja (skip AI)\n" +
+		"`/pipeline threads` — Trigger threads generator\n" +
 		"`/pipeline publish` — Trigger repliz uploader (posting ke sosmed)\n" +
 		"`/pipeline status` — Cek status pipeline hari ini\n\n" +
-		"Semua command menggunakan data terbaru dari database.\n" +
+		"Pipeline serial: scrape → ai → media → publish.\n" +
 		"Gunakan dengan hati-hati."
 
 	msg := tgbotapi.NewMessage(chatID, text)
@@ -160,7 +160,7 @@ func (p *PipelineHandler) triggerMedia(chatID int64) {
 
 	p.send(chatID, fmt.Sprintf("⏳ Triggering media generator untuk tanggal *%s* ...", event.Date))
 
-	if err := p.q.Publish(queue.KeyGoldScrapedMedia, event); err != nil {
+	if err := p.q.Publish(queue.KeyGoldProcessed, event); err != nil {
 		p.send(chatID, "❌ Gagal publish ke queue media: "+err.Error())
 		return
 	}
