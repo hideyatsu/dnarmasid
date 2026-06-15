@@ -86,7 +86,7 @@ func main() {
 					// Send caption to admin
 					content, ok := event.Contents[models.PlatformGeneral]
 					if ok && content != "" {
-						tracker.SendToAdmin(sess.ChatID, fmt.Sprintf("✍️ *Caption Generated*\n\n%s", content))
+						tracker.SendToAdmin(sess.ChatID, fmt.Sprintf("✍️ *Caption Generated — %s*\n\n%s", event.Date, content))
 					}
 				}
 			}
@@ -140,30 +140,28 @@ func main() {
 		}
 	}()
 
-	// ─── Goroutine 4: Consume media.generation.completed → update Repliz step
+	// ─── Goroutine 4: Consume bot.media.done → update Repliz step (dedicated channel, no competition)
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		log.Println("[telegram-bot] 📡 Listening media.generation.completed queue...")
+		log.Println("[telegram-bot] 📡 Listening bot.media.done queue...")
 		for {
 			select {
 			case <-quit:
 				return
 			default:
 				var event models.MediaGenerationCompletedEvent
-				err := q.ConsumeJSON(queue.KeyMediaGenerationCompleted, 5*time.Second, &event)
+				err := q.ConsumeJSON(queue.KeyBotMediaDone, 5*time.Second, &event)
 				if err != nil {
 					continue
 				}
-				log.Printf("[telegram-bot] 📥 media.generation.completed received: date=%s", event.Date)
+				log.Printf("[telegram-bot] 📥 bot.media.done received: date=%s", event.Date)
 
 				// If this is a republish session, mark Repliz as done
 				sess := tracker.UpdateStep(event.PriceID, "Repliz Upload", "done", "Queued for posting")
 				if sess != nil {
 					tracker.EditMessage(sess)
-					// Mark session complete and notify admin
 					tracker.SendToAdmin(sess.ChatID, fmt.Sprintf("🚀 *Republish Complete* — %s\n\n✅ Semua tahap selesai. Proses posting berjalan otomatis ke Instagram/Facebook.", event.Date))
-					// Clean up tracker
 					go tracker.RemoveSession(event.PriceID)
 				}
 			}
@@ -188,6 +186,32 @@ func main() {
 				log.Printf("[telegram-bot] 📥 scrape.failed received: date=%s", event.Date)
 				if err := broadcaster.SendScrapeFailureNotification(&event); err != nil {
 					log.Printf("[telegram-bot] ❌ SendScrapeFailureNotification error: %v", err)
+				}
+			}
+		}
+	}()
+
+	// ─── Goroutine 6: Timeout watcher — mark stale republish sessions as failed
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		log.Println("[telegram-bot] ⏱️ Republish timeout watcher active (timeout: 120s)")
+		ticker := time.NewTicker(15 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-quit:
+				return
+			case <-ticker.C:
+				staleSessions := tracker.GetStaleSessions(120 * time.Second)
+				for _, sess := range staleSessions {
+					log.Printf("[telegram-bot] ⏱️ Session %d (%s) timed out, marking failed", sess.PriceID, sess.Date)
+					sess = tracker.MarkFailed(sess.PriceID, "Timeout (120s)")
+					if sess != nil {
+						tracker.EditMessage(sess)
+						tracker.SendToAdmin(sess.ChatID, fmt.Sprintf("🔴 *Republish Failed* — %s\n\nPipeline timeout setelah 120 detik. Periksa log untuk detail.", sess.Date))
+						go tracker.RemoveSession(sess.PriceID)
+					}
 				}
 			}
 		}

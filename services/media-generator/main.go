@@ -129,6 +129,10 @@ func main() {
 						} else {
 							log.Printf("[media-generator] ✅ Repliz event published for date %s", date)
 						}
+						// Also publish to bot channel for republish progress (no consumer competition)
+						if err := q.Publish(queue.KeyBotMediaDone, replizEvent); err != nil {
+							log.Printf("[media-generator] ⚠️ Failed to publish bot.media.done: %v", err)
+						}
 					}(event.PriceID, event.Date, imgEvent, event.ScreenshotPriceURL, event.ScreenshotBuybackURL, ctaURL, heroSlideURL, bridgingSlideURL, featureHargaURL, featureStokAlertURL, featureStokButikURL)
 				}
 			}
