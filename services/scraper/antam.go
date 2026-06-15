@@ -134,10 +134,10 @@ func (s *AntamScraper) Run(forceDummy bool) (*models.GoldScrapedEvent, error) {
 	dateStr = strings.ReplaceAll(dateStr, "Dec", "Des")
 
 	if screenshotPrice != "" {
-		s.saveScreenshotToDB(priceID, "raw_screenshot_price_"+dateStr+".jpg", screenshotPrice)
+		s.saveScreenshotToDB(priceID, models.MediaTypeScreenshotPrice, "raw_screenshot_price_"+dateStr+".jpg", screenshotPrice)
 	}
 	if screenshotBuyback != "" {
-		s.saveScreenshotToDB(priceID, "raw_screenshot_buyback_"+dateStr+".jpg", screenshotBuyback)
+		s.saveScreenshotToDB(priceID, models.MediaTypeScreenshotBuyback, "raw_screenshot_buyback_"+dateStr+".jpg", screenshotBuyback)
 	}
 
 	updateTimeStr := updateTime.Format("02 Jan 2006 15:04:05")
@@ -723,7 +723,7 @@ func (s *AntamScraper) saveDebugFile(filename string, data []byte) string {
 }
 
 // saveScreenshotToDB menyimpan URL screenshot ke generated_media agar bisa di-query saat republish
-func (s *AntamScraper) saveScreenshotToDB(priceID uint, filename, publicURL string) {
+func (s *AntamScraper) saveScreenshotToDB(priceID uint, mediaType models.MediaType, filename, publicURL string) {
 	// Upsert: update jika sudah ada (idempotent)
 	var existing models.GeneratedMedia
 	result := s.db.Where("price_id = ? AND file_name = ?", priceID, filename).First(&existing)
@@ -732,7 +732,7 @@ func (s *AntamScraper) saveScreenshotToDB(priceID uint, filename, publicURL stri
 		// INSERT baru
 		media := models.GeneratedMedia{
 			PriceID:   priceID,
-			MediaType: models.MediaTypeImage,
+			MediaType: mediaType,
 			FileName:  filename,
 			PublicURL: publicURL,
 			Status:    "pending",

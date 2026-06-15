@@ -105,8 +105,10 @@ type ContentReadyEvent struct {
 type MediaType string
 
 const (
-	MediaTypeImage MediaType = "image"
-	MediaTypeVideo MediaType = "video"
+	MediaTypeImage           MediaType = "image"
+	MediaTypeVideo           MediaType = "video"
+	MediaTypeScreenshotPrice MediaType = "screenshot_price"
+	MediaTypeScreenshotBuyback MediaType = "screenshot_buyback"
 )
 
 type GeneratedMedia struct {
