@@ -16,14 +16,15 @@ import (
 
 // PipelineHandler handles manual pipeline triggers from admin
 type PipelineHandler struct {
-	cfg *config.Config
-	db  *gorm.DB
-	bot *tgbotapi.BotAPI
-	q   *queue.Client
+	cfg     *config.Config
+	db      *gorm.DB
+	bot     *tgbotapi.BotAPI
+	q       *queue.Client
+	tracker *ProgressTracker
 }
 
-func NewPipelineHandler(cfg *config.Config, db *gorm.DB, bot *tgbotapi.BotAPI, q *queue.Client) *PipelineHandler {
-	return &PipelineHandler{cfg: cfg, db: db, bot: bot, q: q}
+func NewPipelineHandler(cfg *config.Config, db *gorm.DB, bot *tgbotapi.BotAPI, q *queue.Client, tracker *ProgressTracker) *PipelineHandler {
+	return &PipelineHandler{cfg: cfg, db: db, bot: bot, q: q, tracker: tracker}
 }
 
 func (p *PipelineHandler) Handle(chatID int64, args string) {
@@ -282,22 +283,32 @@ func (p *PipelineHandler) triggerRepublish(chatID int64) {
 		trendEmoji = "🔴"
 	}
 
-	p.send(chatID, fmt.Sprintf(
-		"🔄 *Republish Pipeline Started*\n\n"+
-			"📅 Tanggal: *%s*\n"+
-			"💰 1g Antam: Buy Rp %s | Sell Rp %s\n"+
-			"%s Trend: *%s* | Change: Rp %s (%.2f%%)\n\n"+
-			"▸ Step 1/3: AI Caption generating...\n"+
-			"▸ Step 2/3: Infografis rendering...\n"+
-			"▸ Step 3/3: Posting ke sosmed...\n\n"+
-			"_Pipeline akan berjalan otomatis, pantau notifikasi berikutnya._",
-		event.Date,
-		formatPriceIDR(event.Prices[0].BuyPrice),
-		formatPriceIDR(event.Prices[0].SellPrice),
-		trendEmoji, event.Trend,
-		formatPriceIDR(event.ChangeAmt),
-		event.ChangePct,
-	))
+	// Build initial steps for progress bar
+	steps := []ProgressStep{
+		{Name: "Fetch Data", Status: "done", Detail: fmt.Sprintf("1g Antam — Rp %s", formatPriceIDR(event.Prices[0].BuyPrice))},
+		{Name: "AI Caption", Status: "processing", Detail: fmt.Sprintf("%s %s", trendEmoji, event.Trend)},
+		{Name: "Media Render", Status: "pending"},
+		{Name: "Repliz Upload", Status: "pending"},
+	}
+
+	// Send initial progress message
+	initialText := RenderProgress(&RepublishSession{
+		Date:  event.Date,
+		Steps: steps,
+	})
+	msg := tgbotapi.NewMessage(chatID, initialText)
+	msg.ParseMode = "Markdown"
+	sent, err := p.bot.Send(msg)
+	if err != nil {
+		log.Printf("[pipeline-handler] ⚠️ send progress error: %v", err)
+		p.send(chatID, "❌ Gagal mengirim progress message: "+err.Error())
+		return
+	}
+
+	// Register session in tracker
+	if p.tracker != nil {
+		p.tracker.StartSession(chatID, sent.MessageID, event.PriceID, event.Date, steps)
+	}
 
 	// Trigger AI generator (which triggers media, then repliz via serial pipeline)
 	if err := p.q.Publish(queue.KeyGoldScrapedAI, event); err != nil {
@@ -305,7 +316,7 @@ func (p *PipelineHandler) triggerRepublish(chatID int64) {
 		return
 	}
 
-	log.Printf("[pipeline-handler] 🔄 Republish triggered for %s (price_id=%d)", event.Date, event.PriceID)
+	log.Printf("[pipeline-handler] 🔄 Republish triggered for %s (price_id=%d, msg_id=%d)", event.Date, event.PriceID, sent.MessageID)
 }
 
 func (p *PipelineHandler) triggerPublish(chatID int64) {

@@ -22,15 +22,17 @@ type CommandHandler struct {
 	bot      *tgbotapi.BotAPI
 	q        *queue.Client
 	pipeline *PipelineHandler
+	tracker  *ProgressTracker
 }
 
-func NewCommandHandler(cfg *config.Config, db *gorm.DB, bot *tgbotapi.BotAPI, q *queue.Client) *CommandHandler {
+func NewCommandHandler(cfg *config.Config, db *gorm.DB, bot *tgbotapi.BotAPI, q *queue.Client, tracker *ProgressTracker) *CommandHandler {
 	return &CommandHandler{
 		cfg:      cfg,
 		db:       db,
 		bot:      bot,
 		q:        q,
-		pipeline: NewPipelineHandler(cfg, db, bot, q),
+		tracker:  tracker,
+		pipeline: NewPipelineHandler(cfg, db, bot, q, tracker),
 	}
 }
 
