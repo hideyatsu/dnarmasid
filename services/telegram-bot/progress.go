@@ -188,13 +188,13 @@ func RenderProgress(sess *RepublishSession) string {
 	}
 
 	// Header
+	var result string
 	if hasError {
-		result := fmt.Sprintf("🔄 *Republish Progress — %s*\n\n🔴 *Pipeline Gagal!*\n", sess.Date)
-		result += fmt.Sprintf("`%s` %d/%d\n\n", bar, done, total)
+		result = fmt.Sprintf("🔄 *Republish Progress — %s*\n\n🔴 *Pipeline Gagal!*\n", sess.Date)
 	} else {
-		result := fmt.Sprintf("🔄 *Republish Progress — %s*\n\n")
-		result += fmt.Sprintf("`%s` %d/%d\n\n", bar, done, total)
+		result = fmt.Sprintf("🔄 *Republish Progress — %s*\n\n", sess.Date)
 	}
+	result += fmt.Sprintf("`%s` %d/%d\n\n", bar, done, total)
 
 	// Steps
 	for _, s := range sess.Steps {
