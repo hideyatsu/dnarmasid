@@ -33,30 +33,12 @@ func (p *PipelineHandler) Handle(chatID int64, args string) {
 	}
 
 	parts := strings.Fields(args)
-	if len(parts) == 0 {
-		p.showHelp(chatID)
+	if len(parts) == 0 || strings.ToLower(parts[0]) != "republish" {
+		p.send(chatID, "❌ Command tidak dikenal. Gunakan /republish.")
 		return
 	}
 
-	action := strings.ToLower(parts[0])
-	switch action {
-	case "scrape":
-		p.triggerScrape(chatID)
-	case "ai":
-		p.triggerAI(chatID)
-	case "media":
-		p.triggerMedia(chatID)
-	case "threads":
-		p.triggerThreads(chatID)
-	case "publish":
-		p.triggerPublish(chatID)
-	case "republish":
-		p.triggerRepublish(chatID)
-	case "status":
-		p.showStatus(chatID)
-	default:
-		p.send(chatID, "❌ Subcommand tidak dikenal. Ketik /pipeline untuk bantuan.")
-	}
+	p.triggerRepublish(chatID)
 }
 
 func (p *PipelineHandler) showHelp(chatID int64) {
@@ -496,9 +478,6 @@ func formatPriceIDR(price int64) string {
 }
 
 // registerBotCommands registers bot commands to Telegram API (setMyCommands).
-// Only public commands and /admin (command listing) are registered.
-// Individual admin commands (/scrape, /threads, /pipeline) are intentionally
-// omitted so they stay hidden from the command menu.
 func registerBotCommands(bot *tgbotapi.BotAPI) error {
 	commands := []tgbotapi.BotCommand{
 		{Command: "start", Description: "Mulai bot"},
@@ -506,7 +485,8 @@ func registerBotCommands(bot *tgbotapi.BotAPI) error {
 		{Command: "unsubscribe", Description: "Berhenti berlangganan"},
 		{Command: "status", Description: "Cek status langganan"},
 		{Command: "help", Description: "Tampilkan bantuan"},
-		{Command: "admin", Description: "Daftar command admin"},
+		{Command: "admin", Description: "Admin panel (klik tombol)"},
+		{Command: "republish", Description: "Republish pipeline lengkap"},
 	}
 
 	config := tgbotapi.NewSetMyCommands(commands...)

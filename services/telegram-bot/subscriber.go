@@ -1,16 +1,11 @@
 package main
 
 import (
-	"fmt"
 	"log"
 	"os"
-	"strconv"
-	"strings"
 
 	"dnarmasid/shared/config"
 	"dnarmasid/shared/models"
-	"dnarmasid/shared/queue"
-	"time"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"gorm.io/gorm"
@@ -81,14 +76,8 @@ func (h *CommandHandler) handleMessage(msg *tgbotapi.Message) {
 		h.handleHelp(chatID)
 	case "admin":
 		h.handleAdmin(chatID)
-	case "scrape":
-		h.handleScrape(chatID)
-	case "threads":
-		h.handleThreads(chatID, msg.CommandArguments())
-	case "pipeline":
-		h.pipeline.Handle(chatID, msg.CommandArguments())
 	case "republish":
-		h.pipeline.Handle(chatID, "republish")
+		h.handleRepublish(chatID)
 	default:
 		if msg.IsCommand() {
 			h.send(chatID, "❓ Command tidak dikenal. Ketik /help untuk daftar command.")
@@ -182,42 +171,25 @@ func (h *CommandHandler) handleAdmin(chatID int64) {
 		return // silent drop for non-admin
 	}
 
-	text := "⚙️ *Admin Commands*\n\n" +
-		"*Scraper:*\n" +
-		"`/scrape` — Trigger manual scrape harga Antam\n\n" +
-		"*Threads:*\n" +
-		"`/threads` — List pending konten Threads\n" +
-		"`/threads <nomor>` — Preview full konten\n\n" +
-		"*Pipeline (Serial):*\n" +
-		"`/pipeline scrape` — Trigger scraper\n" +
-		"`/pipeline ai` — Trigger AI generator (auto-trigger media)\n" +
-		"`/pipeline media` — Trigger media generator saja\n" +
-		"`/pipeline threads` — Trigger threads generator\n" +
-		"`/pipeline publish` — Trigger repliz uploader (posting sosmed)\n" +
-		"`/pipeline status` — Cek status pipeline hari ini\n\n" +
-		"*Republish:*\n" +
-		"`/republish` — Republish full pipeline (AI → Media → Posting)\n"
-	h.send(chatID, text)
+	text := "⚙️ *Admin Panel — DnarMasID*\n\nKlik tombol di bawah untuk menjalankan aksi."
+
+	msg := tgbotapi.NewMessage(chatID, text)
+	msg.ParseMode = "Markdown"
+	msg.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("🔄 Republish (AI → Media → Posting)", "/republish"),
+		),
+	)
+	if _, err := h.bot.Send(msg); err != nil {
+		log.Printf("[command-handler] ⚠️ send admin panel error: %v", err)
+	}
 }
 
-func (h *CommandHandler) handleScrape(chatID int64) {
+func (h *CommandHandler) handleRepublish(chatID int64) {
 	if chatID != h.cfg.TelegramAdminChatID {
 		return // silent drop for non-admin
 	}
-
-	h.send(chatID, "⏳ Memulai proses scraping Antam secara manual...")
-
-	job := map[string]string{
-		"triggered_at": time.Now().Format(time.RFC3339),
-		"source":       "telegram_bot",
-	}
-
-	if err := h.q.Publish(queue.KeyJobScrape, job); err != nil {
-		h.send(chatID, "❌ Gagal mengirim job ke queue: "+err.Error())
-		return
-	}
-
-	h.send(chatID, "✅ Job scraping berhasil dikirim ke antrean. Mohon tunggu notifikasi hasilnya.")
+	h.pipeline.Handle(chatID, "republish")
 }
 
 func (h *CommandHandler) send(chatID int64, text string) {
@@ -226,72 +198,4 @@ func (h *CommandHandler) send(chatID int64, text string) {
 	if _, err := h.bot.Send(msg); err != nil {
 		log.Printf("[command-handler] ⚠️ send error: %v", err)
 	}
-}
-
-func (h *CommandHandler) handleThreads(chatID int64, args string) {
-	if chatID != h.cfg.TelegramAdminChatID {
-		return // silent drop for non-admin
-	}
-
-	// If args is a number, show detail
-	if args != "" {
-		num, err := strconv.Atoi(args)
-		if err == nil {
-			h.handleThreadsDetail(chatID, num)
-			return
-		}
-	}
-
-	// List pending threads
-	var contents []models.GeneratedContent
-	h.db.Where("platform = ? AND status = ?", models.PlatformThreads, "pending").
-		Order("created_at DESC").
-		Limit(10).
-		Find(&contents)
-
-	if len(contents) == 0 {
-		h.send(chatID, "🧵 Belum ada konten Threads pending.")
-		return
-	}
-
-	var sb strings.Builder
-	sb.WriteString("🧵 *Konten Threads Pending:*\n\n")
-
-	for i, c := range contents {
-		date := c.CreatedAt.Format("02 Jan")
-		preview := c.ContentText
-		runes := []rune(preview)
-		if len(runes) > 60 {
-			preview = string(runes[:60]) + "..."
-		}
-		sb.WriteString(fmt.Sprintf("%d. [%s] *%s*\n   %s\n\n", i+1, date, c.ThreadType, preview))
-	}
-
-	sb.WriteString("Ketik `/threads <nomor>` untuk lihat full konten.")
-
-	msg := tgbotapi.NewMessage(chatID, sb.String())
-	msg.ParseMode = "Markdown"
-	h.bot.Send(msg)
-}
-
-func (h *CommandHandler) handleThreadsDetail(chatID int64, num int) {
-	var contents []models.GeneratedContent
-	h.db.Where("platform = ? AND status = ?", models.PlatformThreads, "pending").
-		Order("created_at DESC").
-		Limit(10).
-		Find(&contents)
-
-	if num < 1 || num > len(contents) {
-		h.send(chatID, "❌ Nomor tidak valid.")
-		return
-	}
-
-	c := contents[num-1]
-	text := fmt.Sprintf("🧵 *Threads [%s]* — %s\n\n%s\n\n---\nStatus: %s | Created: %s",
-		c.ThreadType, c.CreatedAt.Format("02 Jan 2006 15:04"),
-		c.ContentText, c.Status, c.CreatedAt.Format("02 Jan 2006"))
-
-	msg := tgbotapi.NewMessage(chatID, text)
-	msg.ParseMode = "Markdown"
-	h.bot.Send(msg)
 }
