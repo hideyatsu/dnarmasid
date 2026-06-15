@@ -79,14 +79,14 @@ func (p *PipelineHandler) getLatestEvent() (*models.GoldScrapedEvent, error) {
 		updateTimeStr = formatDate(*today.SourceUpdateTime) + " " + today.SourceUpdateTime.Format("15:04:05")
 	}
 
-	// Try to get screenshot URLs from previous generated_media
+	// Try to get raw screenshot URLs from generated_media (saved by scraper)
 	var screenshotPriceURL, screenshotBuybackURL string
-	var heroMedia models.GeneratedMedia
-	if err := p.db.Where("price_id = ? AND file_name LIKE ?", today.ID, "hero_screenshot_%").First(&heroMedia).Error; err == nil {
-		screenshotPriceURL = heroMedia.PublicURL
+	var screenshotMedia models.GeneratedMedia
+	if err := p.db.Where("price_id = ? AND file_name LIKE ?", today.ID, "raw_screenshot_price_%").First(&screenshotMedia).Error; err == nil {
+		screenshotPriceURL = screenshotMedia.PublicURL
 	}
-	if err := p.db.Where("price_id = ? AND file_name LIKE ?", today.ID, "screenshot_%").First(&heroMedia).Error; err == nil {
-		screenshotBuybackURL = heroMedia.PublicURL
+	if err := p.db.Where("price_id = ? AND file_name LIKE ?", today.ID, "raw_screenshot_buyback_%").First(&screenshotMedia).Error; err == nil {
+		screenshotBuybackURL = screenshotMedia.PublicURL
 	}
 
 	return &models.GoldScrapedEvent{

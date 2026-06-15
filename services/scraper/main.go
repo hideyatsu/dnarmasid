@@ -36,8 +36,8 @@ func main() {
 		log.Printf("[scraper] ⚠️ R2 Storage not configured: %v", err)
 	}
 
-	// Auto migrate table
-	database.AutoMigrate(&models.GoldPrice{}, &models.PipelineLog{})
+	// Auto migrate tables
+	database.AutoMigrate(&models.GoldPrice{}, &models.PipelineLog{}, &models.GeneratedMedia{})
 
 	startTime := time.Now()
 	chromeManager := chrome.NewManager()

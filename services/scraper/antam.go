@@ -125,22 +125,31 @@ func (s *AntamScraper) Run(forceDummy bool) (*models.GoldScrapedEvent, error) {
 	// 4. Hitung perubahan vs kemarin (gram 1)
 	changePct, changeAmt, trend, bbChangeAmt, bbTrend := s.calcChange(parsedDate, prices)
 
-	updateTimeStr := updateTime.Format("02 Jan 2006 15:04:05")
-	updateTimeStr = strings.ReplaceAll(updateTimeStr, "May", "Mei")
-	updateTimeStr = strings.ReplaceAll(updateTimeStr, "Aug", "Agt")
-	updateTimeStr = strings.ReplaceAll(updateTimeStr, "Oct", "Okt")
-	updateTimeStr = strings.ReplaceAll(updateTimeStr, "Dec", "Des")
-
+	// 5. Simpan screenshot ke generated_media (agar bisa di-query saat republish)
+	priceID := prices[0].ID
 	dateStr := parsedDate.Format("02 Jan 2006")
 	dateStr = strings.ReplaceAll(dateStr, "May", "Mei")
 	dateStr = strings.ReplaceAll(dateStr, "Aug", "Agt")
 	dateStr = strings.ReplaceAll(dateStr, "Oct", "Okt")
 	dateStr = strings.ReplaceAll(dateStr, "Dec", "Des")
 
+	if screenshotPrice != "" {
+		s.saveScreenshotToDB(priceID, "raw_screenshot_price_"+dateStr+".jpg", screenshotPrice)
+	}
+	if screenshotBuyback != "" {
+		s.saveScreenshotToDB(priceID, "raw_screenshot_buyback_"+dateStr+".jpg", screenshotBuyback)
+	}
+
+	updateTimeStr := updateTime.Format("02 Jan 2006 15:04:05")
+	updateTimeStr = strings.ReplaceAll(updateTimeStr, "May", "Mei")
+	updateTimeStr = strings.ReplaceAll(updateTimeStr, "Aug", "Agt")
+	updateTimeStr = strings.ReplaceAll(updateTimeStr, "Oct", "Okt")
+	updateTimeStr = strings.ReplaceAll(updateTimeStr, "Dec", "Des")
+
 	event := &models.GoldScrapedEvent{
 		Date:                 dateStr,
 		UpdateTime:           updateTimeStr,
-		PriceID:              prices[0].ID,
+		PriceID:              priceID,
 		Prices:               prices,
 		ChangePct:            changePct,
 		ChangeAmt:            changeAmt,
@@ -711,6 +720,38 @@ func (s *AntamScraper) saveDebugFile(filename string, data []byte) string {
 		}
 	}
 	return ""
+}
+
+// saveScreenshotToDB menyimpan URL screenshot ke generated_media agar bisa di-query saat republish
+func (s *AntamScraper) saveScreenshotToDB(priceID uint, filename, publicURL string) {
+	// Upsert: update jika sudah ada (idempotent)
+	var existing models.GeneratedMedia
+	result := s.db.Where("price_id = ? AND file_name = ?", priceID, filename).First(&existing)
+	
+	if result.Error == gorm.ErrRecordNotFound {
+		// INSERT baru
+		media := models.GeneratedMedia{
+			PriceID:   priceID,
+			MediaType: models.MediaTypeImage,
+			FileName:  filename,
+			PublicURL: publicURL,
+			Status:    "done",
+		}
+		if err := s.db.Create(&media).Error; err != nil {
+			log.Printf("[scraper] ❌ Failed to save screenshot %s to DB: %v", filename, err)
+		} else {
+			log.Printf("[scraper] 💾 Screenshot saved to DB: %s", filename)
+		}
+	} else if result.Error == nil {
+		// UPDATE existing
+		existing.PublicURL = publicURL
+		existing.Status = "done"
+		if err := s.db.Save(&existing).Error; err != nil {
+			log.Printf("[scraper] ❌ Failed to update screenshot %s in DB: %v", filename, err)
+		} else {
+			log.Printf("[scraper] 💾 Screenshot updated in DB: %s", filename)
+		}
+	}
 }
 
 func stripTags(s string) string {
