@@ -32,12 +32,6 @@ func (p *PipelineHandler) Handle(chatID int64, args string) {
 		return // silent drop for non-admin
 	}
 
-	parts := strings.Fields(args)
-	if len(parts) == 0 || strings.ToLower(parts[0]) != "republish" {
-		p.send(chatID, "❌ Command tidak dikenal. Gunakan /republish.")
-		return
-	}
-
 	p.triggerRepublish(chatID)
 }
 
@@ -485,7 +479,9 @@ func registerBotCommands(bot *tgbotapi.BotAPI) error {
 		{Command: "unsubscribe", Description: "Berhenti berlangganan"},
 		{Command: "status", Description: "Cek status langganan"},
 		{Command: "help", Description: "Tampilkan bantuan"},
-		{Command: "admin", Description: "Admin panel (klik tombol)"},
+		{Command: "admin", Description: "Admin panel"},
+		{Command: "scrape", Description: "Trigger manual scrape"},
+		{Command: "threads", Description: "List pending threads"},
 		{Command: "republish", Description: "Republish pipeline lengkap"},
 	}
 
