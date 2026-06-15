@@ -190,7 +190,9 @@ func (h *CommandHandler) handleAdmin(chatID int64) {
 		"`/pipeline media` — Trigger media generator saja\n" +
 		"`/pipeline threads` — Trigger threads generator\n" +
 		"`/pipeline publish` — Trigger repliz uploader (posting sosmed)\n" +
-		"`/pipeline status` — Cek status pipeline hari ini\n"
+		"`/pipeline status` — Cek status pipeline hari ini\n\n" +
+		"*Republish:*\n" +
+		"`/republish` — Republish full pipeline (AI → Media → Posting)\n"
 	h.send(chatID, text)
 }
 
