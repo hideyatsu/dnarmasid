@@ -18,13 +18,14 @@ type ProgressStep struct {
 
 // RepublishSession tracks a single republish pipeline run
 type RepublishSession struct {
-	ChatID    int64
-	MessageID int
-	PriceID   uint
-	Date      string
-	Steps     []ProgressStep
-	StartedAt time.Time
-	FailedAt  *time.Time
+	ChatID       int64
+	MessageID    int
+	PriceID      uint
+	Date         string
+	Steps        []ProgressStep
+	StartedAt    time.Time
+	LastUpdateAt time.Time // updated setiap ada progress change
+	FailedAt     *time.Time
 }
 
 // ProgressTracker tracks all active republish sessions (thread-safe)
@@ -47,13 +48,15 @@ func (t *ProgressTracker) StartSession(chatID int64, messageID int, priceID uint
 	t.Lock()
 	defer t.Unlock()
 
+	now := time.Now()
 	t.sessions[priceID] = &RepublishSession{
-		ChatID:    chatID,
-		MessageID: messageID,
-		PriceID:   priceID,
-		Date:      date,
-		StartedAt: time.Now(),
-		Steps:     initialSteps,
+		ChatID:       chatID,
+		MessageID:    messageID,
+		PriceID:      priceID,
+		Date:         date,
+		StartedAt:    now,
+		LastUpdateAt: now,
+		Steps:        initialSteps,
 	}
 }
 
@@ -73,6 +76,7 @@ func (t *ProgressTracker) UpdateStep(priceID uint, stepName string, status strin
 			if detail != "" {
 				sess.Steps[i].Detail = detail
 			}
+			sess.LastUpdateAt = time.Now()
 			break
 		}
 	}
@@ -127,7 +131,7 @@ func (t *ProgressTracker) GetStaleSessions(timeout time.Duration) []*RepublishSe
 	var stale []*RepublishSession
 	now := time.Now()
 	for _, sess := range t.sessions {
-		if now.Sub(sess.StartedAt) > timeout && sess.FailedAt == nil {
+		if now.Sub(sess.LastUpdateAt) > timeout && sess.FailedAt == nil {
 			stale = append(stale, sess)
 		}
 	}
