@@ -126,7 +126,18 @@ func (s *AntamScraper) Run(forceDummy bool) (*models.GoldScrapedEvent, error) {
 	changePct, changeAmt, trend, bbChangeAmt, bbTrend := s.calcChange(parsedDate, prices)
 
 	// 5. Simpan screenshot ke generated_media (agar bisa di-query saat republish)
-	priceID := prices[0].ID
+	// Cari price_id gram 1.0 sebagai acuan utama pipeline
+	var priceID uint
+	for _, p := range prices {
+		if p.Gram == 1.0 {
+			priceID = p.ID
+			break
+		}
+	}
+	if priceID == 0 {
+		priceID = prices[0].ID // fallback: gunakan gram terendah jika 1.0 tidak ada
+	}
+	
 	dateStr := parsedDate.Format("02 Jan 2006")
 	dateStr = strings.ReplaceAll(dateStr, "May", "Mei")
 	dateStr = strings.ReplaceAll(dateStr, "Aug", "Agt")
@@ -724,9 +735,9 @@ func (s *AntamScraper) saveDebugFile(filename string, data []byte) string {
 
 // saveScreenshotToDB menyimpan URL screenshot ke generated_media agar bisa di-query saat republish
 func (s *AntamScraper) saveScreenshotToDB(priceID uint, mediaType models.MediaType, filename, publicURL string) {
-	// Upsert: update jika sudah ada (idempotent)
+	// Upsert: update jika sudah ada (idempotent) — diperketat dengan media_type
 	var existing models.GeneratedMedia
-	result := s.db.Where("price_id = ? AND file_name = ?", priceID, filename).First(&existing)
+	result := s.db.Where("price_id = ? AND media_type = ? AND file_name = ?", priceID, mediaType, filename).First(&existing)
 	
 	if result.Error == gorm.ErrRecordNotFound {
 		// INSERT baru
