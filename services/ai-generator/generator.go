@@ -116,13 +116,13 @@ Harga: Rp [Price] / gr ([Trend Triangle] Rp [Change Amount])
 Buyback: Rp [Buyback] / gr ([Trend Triangle] Rp [Change Amount])
 Spread: [Spread]
 
-Trend: [Provide a brief Indonesian market trend summary with emojis]
+Trend: [Bullish/Bearish/Sideways] — [Brief reason in 1 sentence with emoji]
 
-[Provide 2-3 sentences of INSIGHT/ANALYSIS in INDONESIAN about whether it is a good time to buy/sell based on the data above]
+[2-3 sentences of INSIGHT: market factors, investor sentiment, practical advice]
 
-[Create a creative and persuasive Call to Action in INDONESIAN, encouraging users to use our Telegram bot for real-time updates and price alerts by clicking the link in bio]
+[Short CTA: encourage users to follow/check bio for real-time updates]
 
-[Add maximum 5 relevant hashtags in Indonesian]
+[Maximum 5 relevant hashtags in Indonesian]
 
 Tone: Professional, persuasive, and easy to understand.`,
 		event.Date,
@@ -156,7 +156,7 @@ Harga: Rp [Price] / gr ([Trend Triangle] Rp [Change Amount])
 Buyback: Rp [Buyback] / gr ([Trend Triangle] Rp [Change Amount])
 Spread: [Spread with explanation]
 
-Trend: [Provide Indonesian market trend summary — use multiple emojis and be expressive]
+Trend: [Bullish/Bearish/Sideways] — [Brief reason with multiple emojis]
 
 [Provide 4-6 sentences of DEEP ANALYSIS in INDONESIAN:
 - Why is the price moving this way? (global factors, USD, geopolitik, supply/demand)
@@ -164,7 +164,7 @@ Trend: [Provide Indonesian market trend summary — use multiple emojis and be e
 - Historical context: how does today compare to recent trends?
 - Practical advice: is this a good time to buy, sell, or hold?]
 
-[Create a creative, persuasive, and DETAILED Call to Action in INDONESIAN — encourage users to use our Telegram bot for real-time updates and price alerts. Mention specific benefits (notifikasi instan, alert harga, rekomendasi signal).]
+[Short CTA with specific benefits: notifikasi instan, alert harga, rekomendasi signal — encourage users to check bio]
 
 [Add 5-7 relevant hashtags in Indonesian]
 
@@ -178,22 +178,25 @@ Output style: Rich, detailed, elaborated — like a market analyst sharing knowl
 
 func (g *ContentGenerator) fallbackUnifiedContent(event *models.GoldScrapedEvent, p1g models.GoldPrice, spread int64, pct float64) string {
 	tEmoji := trendEmoji(event.Trend)
+	bbTEmoji := trendEmoji(event.BuybackTrend)
+	trendType := mapTrendType(event.Trend)
 	return fmt.Sprintf(`Harga Emas Antam Hari Ini
 
 Tanggal: %s
-Harga: Rp %s / gr (%s)
-Buyback: Rp %s / gr
+Harga: Rp %s / gr (%s Rp %s)
+Buyback: Rp %s / gr (%s Rp %s)
 Spread: Rp %s (%.2f%%)
-Trend: %s %s
+
+Trend: %s — Harga %s dari kemarin, tekanan beli meningkat di tengah ketidakpastian global 📈
 
 Harga emas hari ini menunjukkan pergerakan %s. Pantau terus untuk mendapatkan harga terbaik.
 
-Butuh update harga real-time?
-Klik link di bio untuk menggunakan bot kami dan pasang Alert Harga agar tidak ketinggalan momentum pasar.
+Follow buat update harga real-time setiap hari!
 
-#HargaEmas #Antam #DnarMasID #AntamLogamMulia #HargaEmasHariIni`,
-		event.Date, formatRupiah(p1g.BuyPrice), formatChange(event.ChangeAmt, event.ChangePct, event.Trend),
-		formatRupiah(p1g.SellPrice), formatRupiah(spread), pct, event.Trend, tEmoji, event.Trend)
+#EmasAntam #HargaEmas #InvestasiEmas #DnarMasID #LogamMulia`,
+		event.Date, formatRupiah(p1g.BuyPrice), tEmoji, formatRupiah(event.ChangeAmt),
+		formatRupiah(p1g.SellPrice), bbTEmoji, formatRupiah(event.BuybackChangeAmt),
+		formatRupiah(spread), pct, trendType, event.Trend, event.Trend)
 }
 
 // callOllama calls the local Ollama API for generating content
@@ -425,5 +428,16 @@ func trendEmoji(trend string) string {
 		return "▼"
 	default:
 		return "▬"
+	}
+}
+
+func mapTrendType(trend string) string {
+	switch strings.ToLower(trend) {
+	case "up", "naik":
+		return "Bullish"
+	case "down", "turun":
+		return "Bearish"
+	default:
+		return "Sideways"
 	}
 }
