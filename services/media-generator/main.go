@@ -74,10 +74,14 @@ func main() {
 					// Generate new slides for 7-slide carousel (hero, bridging, features)
 					var heroSlideURL, bridgingSlideURL, featureHargaURL, featureStokAlertURL, featureStokButikURL string
 
-					if url, err := generator.GenerateHeroScreenshot(event.ScreenshotPriceURL, event.Date); err != nil {
-						log.Printf("[media-generator] ⚠️ Hero screenshot failed (non-blocking): %v", err)
+					if event.ScreenshotPriceURL != "" {
+						if url, err := generator.GenerateHeroScreenshot(event.ScreenshotPriceURL, event.Date); err != nil {
+							log.Printf("[media-generator] ⚠️ Hero screenshot failed (non-blocking): %v", err)
+						} else {
+							heroSlideURL = url
+						}
 					} else {
-						heroSlideURL = url
+						log.Printf("[media-generator] ℹ️ Screenshot price URL kosong — skip hero slide")
 					}
 
 					if url, err := generator.GenerateBridgingSlide(event.Date); err != nil {
