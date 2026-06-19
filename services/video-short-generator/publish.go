@@ -32,7 +32,8 @@ func (p *Publisher) UploadVideo(videoPath string, event *models.GoldScrapedEvent
 	}
 
 	date := event.Date
-	r2Key := fmt.Sprintf("video-shorts/%s-%d.mp4", date, time.Now().Unix())
+	// Note: R2 GetPublicURL uses filepath.Base, so avoid subdirectory prefixes
+	r2Key := fmt.Sprintf("videoshort-%s-%d.mp4", date, time.Now().Unix())
 
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
