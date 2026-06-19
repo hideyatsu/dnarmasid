@@ -165,7 +165,7 @@ func processVideoShort(cfg *config.Config, database *gorm.DB, q *queue.Client,
 		FilePath:  videoPath,
 		FileName:  outputName,
 		PublicURL: publicURL,
-		Status:    "published",
+		Status:    "sent",
 	}
 	if err := database.Create(&media).Error; err != nil {
 		log.Printf("[video-short] ⚠️ Failed to save media record: %v", err)
