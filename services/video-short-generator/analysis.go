@@ -64,52 +64,52 @@ var hookTemplates = map[MarketCondition]struct {
 	Badge  string
 }{
 	ConditionBullishStrong: {
-		TTS:    "Emas meroket! 7 hari berturut-turut naik, spread tipis. Momentum kuat!",
+		TTS:    "Emas lagi terbang nih, udah 7 hari naik terus tanpa henti",
 		Visual: "📈 BULLISH RUN!",
 		Badge:  "📈",
 	},
 	ConditionBullishModerate: {
-		TTS:    "Emas naik lagi! Sudah amankan posisimu?",
+		TTS:    "Emas naik lagi hari ini, tren positif masih berlanjut",
 		Visual: "📈 EMAS NAIK!",
 		Badge:  "📈",
 	},
 	ConditionBearishStreak: {
-		TTS:    "3 hari turun terus! Saat yang tepat untuk akumulasi?",
+		TTS:    "Emas turun 3 hari berturut-turut, ada yang bilang ini peluang emas",
 		Visual: "⬇️ AKUMULASI?",
 		Badge:  "⬇️",
 	},
 	ConditionBearishLow: {
-		TTS:    "Harga menyentuh titik terendah 7 hari. Waktunya serok?",
+		TTS:    "Harga baru aja nyentuh titik terendah 7 hari terakhir",
 		Visual: "🎯 TERENDAH 7 HARI",
 		Badge:  "🎯",
 	},
 	ConditionHighSpreadVolatile: {
-		TTS:    "Spread melebar, volatilitas tinggi. Hold dulu, jangan FOMO!",
+		TTS:    "Spread lagi lebar banget, pasar lagi gak stabil",
 		Visual: "⚠️ HOLD",
 		Badge:  "⚠️",
 	},
 	ConditionHighSpreadCalm: {
-		TTS:    "Spread melebar tapi pasar tenang. Ada apa dengan Antam?",
+		TTS:    "Spread melebar tapi pasar tenang, kayak ada yang disembunyikan",
 		Visual: "🔍 SPREAD LEBAR",
 		Badge:  "🔍",
 	},
 	ConditionLowSpreadBullish: {
-		TTS:    "Spread tipis + tren naik. Kondisi ideal untuk trading!",
+		TTS:    "Spread tipis plus tren naik, ini momen yang ditunggu-tunggu",
 		Visual: "💎 GOLDEN MOMENT",
 		Badge:  "💎",
 	},
 	ConditionLowSpreadBearish: {
-		TTS:    "Spread tipis saat harga turun. Waspada, jangan buru-buru.",
+		TTS:    "Spread tipis tapi harga turun, jangan gegabah dulu",
 		Visual: "⏳ WASPADA",
 		Badge:  "⏳",
 	},
 	ConditionNearATH: {
-		TTS:    "Harga mendekati level tertinggi 30 hari! Akankah tembus?",
+		TTS:    "Harga udah deket banget sama level tertinggi 30 hari",
 		Visual: "🔥 NEAR ATH!",
 		Badge:  "🔥",
 	},
 	ConditionStableLong: {
-		TTS:    "5 hari stabil. Pasar tenang — persiapan pergerakan besar?",
+		TTS:    "5 hari stabil tanpa banyak gerak, kayak lagi ngumpulin tenaga",
 		Visual: "💤 TENANG",
 		Badge:  "💤",
 	},

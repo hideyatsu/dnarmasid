@@ -178,58 +178,74 @@ func processVideoShort(cfg *config.Config, database *gorm.DB, q *queue.Client,
 	return nil
 }
 
-// buildTTSScript assembles the narration script — conversational style
-// Target: 40-55 kata ≈ 15-18 detik voice over
+// buildTTSScript assembles the narration script — natural storytelling style
+// Target: 60-80 kata ≈ 20-25 detik voice over, smooth flow with bridging
 func buildTTSScript(event *models.GoldScrapedEvent, hargaJual, hargaBuyback int64, analysis *MarketAnalysis) string {
 	var b strings.Builder
 
-	// 1. Hook — langsung dari AI, sudah conversational
+	// 1. Hook — retensi tinggi, langsung dari AI
 	b.WriteString(analysis.HookTTS)
-	b.WriteString(" ")
+	b.WriteString(", ")
 
-	// 2. Harga — ngobrol, bukan baca laporan
+	// 2. Bridging ke harga — natural transition
+	b.WriteString("oke, ")
+
+	// 3. Harga — conversational dengan flow
 	switch analysis.Condition {
 	case 1, 2: // Bullish
-		b.WriteString(fmt.Sprintf("Harga jual sekarang %s per gram ya, buyback %s. ",
+		b.WriteString(fmt.Sprintf("harga jual sekarang di %s per gram ya, buyback %s",
 			formatRupiah(hargaJual), formatRupiah(hargaBuyback)))
 	case 3, 4: // Bearish
-		b.WriteString(fmt.Sprintf("Hari ini jual di %s per gram, buyback-nya %s. ",
+		b.WriteString(fmt.Sprintf("hari ini jual di %s per gram, buyback-nya %s",
 			formatRupiah(hargaJual), formatRupiah(hargaBuyback)))
 	case 5, 6: // High spread
-		b.WriteString(fmt.Sprintf("Harga jual %s, buyback %s per gram. ",
+		b.WriteString(fmt.Sprintf("harga jual %s, buyback %s per gram",
 			formatRupiah(hargaJual), formatRupiah(hargaBuyback)))
 	default:
-		b.WriteString(fmt.Sprintf("Jual %s per gram, buyback %s. ",
+		b.WriteString(fmt.Sprintf("jual %s per gram, buyback %s",
 			formatRupiah(hargaJual), formatRupiah(hargaBuyback)))
 	}
 
-	// 3. Insight — spread + delta, pakai kata penghubung natural
-	b.WriteString(fmt.Sprintf("Spread %s persen. ", formatDecimal(analysis.SpreadPct)))
+	// 4. Spread — direct, no period yet
+	b.WriteString(fmt.Sprintf(", spread %s persen", formatDecimal(analysis.SpreadPct)))
 
+	// 5. Delta — natural connector
 	if analysis.DeltaJual > 10000 {
-		b.WriteString(fmt.Sprintf("Naik %s dari kemarin. ", formatRupiah(abs(analysis.DeltaJual))))
+		b.WriteString(fmt.Sprintf(", naik %s dari kemarin", formatRupiah(abs(analysis.DeltaJual))))
 	} else if analysis.DeltaJual < -10000 {
-		b.WriteString(fmt.Sprintf("Turun %s dari kemarin nih. ", formatRupiah(abs(analysis.DeltaJual))))
+		b.WriteString(fmt.Sprintf(", turun %s dari kemarin nih", formatRupiah(abs(analysis.DeltaJual))))
 	}
 
-	// 4. Trend — satu kalimat insight personal
+	// 6. Bridging ke trend insight
+	b.WriteString(". ")
+
+	// 7. Trend insight — lebih personal & actionable
 	switch analysis.Trend7d {
 	case "up":
 		if analysis.Streak >= 3 {
-			b.WriteString(fmt.Sprintf("Udah %d hari naik terus! ", analysis.Streak))
+			b.WriteString(fmt.Sprintf("Udah %d hari naik terus, momentum kuat nih", analysis.Streak))
+		} else if analysis.Streak >= 2 {
+			b.WriteString("Dua hari berturut-turut naik, tren positif mulai terbentuk")
 		} else {
-			b.WriteString("Tren minggu ini masih positif. ")
+			b.WriteString("Tren minggu ini masih positif, tapi belum kuat")
 		}
 	case "down":
 		if analysis.Streak >= 3 {
-			b.WriteString(fmt.Sprintf("Udah %d hari turun berturut-turut. ", analysis.Streak))
+			b.WriteString(fmt.Sprintf("Udah %d hari turun berturut-turut, mungkin waktu yang tepat buat akumulasi", analysis.Streak))
+		} else if analysis.Streak >= 2 {
+			b.WriteString("Dua hari turun, masih wait and see dulu")
 		} else {
-			b.WriteString("Minggu ini agak melemah. ")
+			b.WriteString("Minggu ini agak melemah, tapi belum ada sinyal kuat")
 		}
+	case "sideways":
+		b.WriteString("Pasar masih sideways, hold dulu sambil pantau pergerakan")
 	}
 
-	// 5. CTA — friendly, bukan robot
-	b.WriteString("Cek link di bio buat update tercepat ya!")
+	// 8. Bridging ke CTA
+	b.WriteString(". ")
+
+	// 9. CTA — friendly dengan urgency
+	b.WriteString("Buat update harga real-time, cek link di bio ya, jangan ketinggalan!")
 
 	return b.String()
 }
