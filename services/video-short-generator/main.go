@@ -122,7 +122,7 @@ func processVideoShort(cfg *config.Config, database *gorm.DB, q *queue.Client,
 	// ── STEP 4: Generate TTS ──
 	log.Println("[video-short] 🎙️ Step 3: Generating TTS...")
 	script := buildTTSScript(event, hargaJual, hargaBuyback, analysis)
-	audioPath, captionPath, err := tts.GenerateTTS(script, fmt.Sprintf("narration-%s", event.Date))
+	audioPath, captionPath, err := tts.GenerateTTS(script, fmt.Sprintf("narration-%s", event.Date), int(analysis.Condition))
 	if err != nil {
 		return fmt.Errorf("tts: %w", err)
 	}

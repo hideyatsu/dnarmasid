@@ -13,41 +13,110 @@ import (
 	"time"
 )
 
-// TTSGenerator generates audio + caption from text
+// TTSGenerator generates audio + caption from text with emotional SSML
 type TTSGenerator struct {
-	outputDir string
-	voice     string
+	outputDir    string
+	voiceMale    string
+	voiceFemale  string
 }
 
 func NewTTSGenerator(outputDir string) *TTSGenerator {
 	ensureDir(outputDir)
 	return &TTSGenerator{
-		outputDir: outputDir,
-		voice:     "id-ID-ArdiNeural",
+		outputDir:   outputDir,
+		voiceMale:   "id-ID-ArdiNeural",
+		voiceFemale: "id-ID-GadisNeural",
 	}
 }
 
-// GenerateTTS generates audio + caption from script
-func (t *TTSGenerator) GenerateTTS(script string, filename string) (string, string, error) {
+// VoiceCondition maps market condition to voice choice and emotion
+type VoiceCondition struct {
+	Voice    string // "male" or "female"
+	Style    string // SSML mstts:express-as style
+	Pitch    string // +5Hz, -3Hz, etc.
+	Rate     string // +2%, -3%, etc.
+}
+
+// GetVoiceForCondition returns voice config based on market condition
+func GetVoiceForCondition(condition int) VoiceCondition {
+	switch condition {
+	case 1: // ConditionBullishStrong — GOLDEN MOMENT / GOLDEN REVERSAL
+		return VoiceCondition{Voice: "female", Style: "excited", Pitch: "+5Hz", Rate: "+5%"}
+	case 2: // ConditionBullishModerate — BULLISH MOMENTUM / STRONG UPTREND
+		return VoiceCondition{Voice: "female", Style: "cheerful", Pitch: "+3Hz", Rate: "+2%"}
+	case 3: // ConditionBearishStreak — STRONG DOWNTREND / BEARISH MOMENTUM
+		return VoiceCondition{Voice: "male", Style: "sad", Pitch: "-5Hz", Rate: "-3%"}
+	case 4: // ConditionBearishLow — SELL PRESSURE / BEARISH REVERSAL
+		return VoiceCondition{Voice: "male", Style: "serious", Pitch: "-3Hz", Rate: "-2%"}
+	default:
+		return VoiceCondition{Voice: "male", Style: "serious", Pitch: "+0Hz", Rate: "+0%"}
+	}
+}
+
+// BuildSSML creates emotional SSML from script text
+func BuildSSML(script string, vc VoiceCondition, fullVoiceName string) string {
+	// Add pauses between sentences for natural flow
+	script = regexp.MustCompile(`([.!?])\s+`).ReplaceAllString(script, "$1 <break time=\"0.4s\"/> ")
+
+	ssml := fmt.Sprintf(`<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xmlns:mstts="https://www.w3.org/2001/mstts" xml:lang="id-ID">
+  <voice name="%s">
+    <mstts:express-as style="%s" styledegree="1.5">
+      <prosody pitch="%s" rate="%s">%s</prosody>
+    </mstts:express-as>
+  </voice>
+</speak>`, fullVoiceName, vc.Style, vc.Pitch, vc.Rate, script)
+
+	return ssml
+}
+
+// GenerateTTS generates emotional audio from script based on market condition
+func (t *TTSGenerator) GenerateTTS(script string, filename string, condition int) (string, string, error) {
 	audioPath := filepath.Join(t.outputDir, filename+".mp3")
 	vttPath := filepath.Join(t.outputDir, filename+".vtt")
 	assPath := filepath.Join(t.outputDir, filename+".ass")
 
+	vc := GetVoiceForCondition(condition)
+	voice := t.voiceMale
+	if vc.Voice == "female" {
+		voice = t.voiceFemale
+	}
+
+	ssml := BuildSSML(script, vc, voice)
+	ssmlPath := filepath.Join(t.outputDir, filename+".ssml")
+	if err := os.WriteFile(ssmlPath, []byte(ssml), 0644); err != nil {
+		return "", "", fmt.Errorf("write SSML: %w", err)
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
+	// Use SSML file for emotional TTS
 	cmd := exec.CommandContext(ctx, "edge-tts",
-		"--voice", t.voice,
-		"--rate", "+5%",
+		"--voice", voice,
+		"--file", ssmlPath,
 		"--write-subtitles", vttPath,
-		"--text", script,
 		"--write-media", audioPath,
 	)
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return "", "", fmt.Errorf("edge-tts failed: %w\nOutput: %s", err, string(output))
+		log.Printf("[tts] ⚠️ SSML failed, falling back to plain: %v", err)
+		// Fallback: plain text with rate
+		cmd = exec.CommandContext(ctx, "edge-tts",
+			"--voice", voice,
+			"--rate", vc.Rate,
+			"--write-subtitles", vttPath,
+			"--text", script,
+			"--write-media", audioPath,
+		)
+		output, err = cmd.CombinedOutput()
+		if err != nil {
+			return "", "", fmt.Errorf("edge-tts failed: %w\nOutput: %s", err, string(output))
+		}
 	}
+
+	// Cleanup SSML
+	os.Remove(ssmlPath)
 
 	if _, err := os.Stat(audioPath); os.IsNotExist(err) {
 		return "", "", fmt.Errorf("audio file not created: %s", audioPath)
@@ -56,17 +125,14 @@ func (t *TTSGenerator) GenerateTTS(script string, filename string) (string, stri
 	// Convert VTT to ASS
 	if err := convertVTTtoASS(vttPath, assPath); err != nil {
 		log.Printf("[tts] ⚠️ Caption conversion failed (non-blocking): %v", err)
-		// Fallback: generate basic ASS without timing
 		if err := generateBasicASS(assPath, audioPath); err != nil {
 			return audioPath, "", err
 		}
 		return audioPath, assPath, nil
 	}
 
-	// Remove VTT (we only need ASS)
 	os.Remove(vttPath)
-
-	log.Printf("[tts] ✅ Generated %s + %s", filepath.Base(audioPath), filepath.Base(assPath))
+	log.Printf("[tts] ✅ Generated %s (voice=%s, style=%s) + %s", filepath.Base(audioPath), voice, vc.Style, filepath.Base(assPath))
 	return audioPath, assPath, nil
 }
 
