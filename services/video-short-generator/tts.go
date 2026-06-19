@@ -81,42 +81,30 @@ func (t *TTSGenerator) GenerateTTS(script string, filename string, condition int
 		voice = t.voiceFemale
 	}
 
-	ssml := BuildSSML(script, vc, voice)
-	ssmlPath := filepath.Join(t.outputDir, filename+".ssml")
-	if err := os.WriteFile(ssmlPath, []byte(ssml), 0644); err != nil {
-		return "", "", fmt.Errorf("write SSML: %w", err)
-	}
-
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
-	// Use SSML file for emotional TTS
+	// edge-tts supports --rate, --volume, --pitch (not SSML)
+	// Volume boost for female/excited, neutral for male/serious
+	volume := "+0%"
+	if vc.Voice == "female" {
+		volume = "+10%"
+	}
+
 	cmd := exec.CommandContext(ctx, "edge-tts",
 		"--voice", voice,
-		"--file", ssmlPath,
+		"--rate", vc.Rate,
+		"--volume", volume,
+		"--pitch", vc.Pitch,
 		"--write-subtitles", vttPath,
+		"--text", script,
 		"--write-media", audioPath,
 	)
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		log.Printf("[tts] ⚠️ SSML failed, falling back to plain: %v", err)
-		// Fallback: plain text with rate
-		cmd = exec.CommandContext(ctx, "edge-tts",
-			"--voice", voice,
-			"--rate", vc.Rate,
-			"--write-subtitles", vttPath,
-			"--text", script,
-			"--write-media", audioPath,
-		)
-		output, err = cmd.CombinedOutput()
-		if err != nil {
-			return "", "", fmt.Errorf("edge-tts failed: %w\nOutput: %s", err, string(output))
-		}
+		return "", "", fmt.Errorf("edge-tts failed: %w\nOutput: %s", err, string(output))
 	}
-
-	// Cleanup SSML
-	os.Remove(ssmlPath)
 
 	if _, err := os.Stat(audioPath); os.IsNotExist(err) {
 		return "", "", fmt.Errorf("audio file not created: %s", audioPath)
@@ -132,7 +120,7 @@ func (t *TTSGenerator) GenerateTTS(script string, filename string, condition int
 	}
 
 	os.Remove(vttPath)
-	log.Printf("[tts] ✅ Generated %s (voice=%s, style=%s) + %s", filepath.Base(audioPath), voice, vc.Style, filepath.Base(assPath))
+	log.Printf("[tts] ✅ Generated %s (voice=%s, pitch=%s, rate=%s, vol=%s) + %s", filepath.Base(audioPath), voice, vc.Pitch, vc.Rate, volume, filepath.Base(assPath))
 	return audioPath, assPath, nil
 }
 
