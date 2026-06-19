@@ -5,6 +5,8 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"regexp"
+	"strings"
 	"syscall"
 	"time"
 
@@ -122,7 +124,7 @@ func processVideoShort(cfg *config.Config, database *gorm.DB, q *queue.Client,
 	// ── STEP 4: Generate TTS ──
 	log.Println("[video-short] 🎙️ Step 3: Generating TTS...")
 	script := buildTTSScript(event, hargaJual, hargaBuyback, analysis)
-	audioPath, captionPath, err := tts.GenerateTTS(script, fmt.Sprintf("narration-%s", event.Date), int(analysis.Condition))
+	audioPath, captionPath, err := tts.GenerateTTS(sanitizeTTSNumbers(script), fmt.Sprintf("narration-%s", event.Date), int(analysis.Condition))
 	if err != nil {
 		return fmt.Errorf("tts: %w", err)
 	}
@@ -175,7 +177,7 @@ func processVideoShort(cfg *config.Config, database *gorm.DB, q *queue.Client,
 	return nil
 }
 
-// buildTTSScript assembles the narration script
+// buildTTSScript assembles the narration script (ID: titik → koma untuk desimal)
 func buildTTSScript(event *models.GoldScrapedEvent, hargaJual, hargaBuyback int64, analysis *MarketAnalysis) string {
 	// Hook
 	script := analysis.HookTTS + " "
@@ -186,7 +188,7 @@ func buildTTSScript(event *models.GoldScrapedEvent, hargaJual, hargaBuyback int6
 	// Price info
 	script += fmt.Sprintf("Harga jual %s rupiah per gram. ", formatRupiah(hargaJual))
 	script += fmt.Sprintf("Buyback %s rupiah. ", formatRupiah(hargaBuyback))
-	script += fmt.Sprintf("Spread %.1f persen. ", analysis.SpreadPct)
+	script += fmt.Sprintf("Spread %s persen. ", formatDecimal(analysis.SpreadPct))
 
 	// Delta
 	if analysis.DeltaJual > 0 {
@@ -209,6 +211,22 @@ func buildTTSScript(event *models.GoldScrapedEvent, hargaJual, hargaBuyback int6
 	script += "Update instan? Klik link di bio."
 
 	return script
+}
+
+// formatDecimal formats float with comma (ID locale) for TTS: 9.52 → "9,52"
+func formatDecimal(v float64) string {
+	s := fmt.Sprintf("%.1f", v)
+	return strings.Replace(s, ".", ",", 1)
+}
+
+// sanitizeTTSNumbers replaces decimal dots with commas for Indonesian TTS.
+// Only matches decimal patterns (1-2 digits after dot), NOT thousand separators.
+// e.g., "9.5 persen" → "9,5 persen", "0.17" → "0,17", "1.250.000" stays untouched
+func sanitizeTTSNumbers(text string) string {
+	// Match digit.digit{1,2} where it's NOT part of a thousand-separator group (3 digits after dot)
+	// Uses word boundary + negative lookahead for 3rd digit
+	re := regexp.MustCompile(`(\d+)\.(\d{1,2})\b`)
+	return re.ReplaceAllString(text, "$1,$2")
 }
 
 // Helper functions are in analysis.go
