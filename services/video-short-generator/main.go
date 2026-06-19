@@ -124,6 +124,7 @@ func processVideoShort(cfg *config.Config, database *gorm.DB, q *queue.Client,
 	// ── STEP 4: Generate TTS ──
 	log.Println("[video-short] 🎙️ Step 3: Generating TTS...")
 	script := buildTTSScript(event, hargaJual, hargaBuyback, analysis)
+	log.Printf("[video-short] 📝 TTS Script: %s", script)
 	audioPath, captionPath, err := tts.GenerateTTS(sanitizeTTSNumbers(script), fmt.Sprintf("narration-%s", event.Date), int(analysis.Condition))
 	if err != nil {
 		return fmt.Errorf("tts: %w", err)
@@ -177,40 +178,60 @@ func processVideoShort(cfg *config.Config, database *gorm.DB, q *queue.Client,
 	return nil
 }
 
-// buildTTSScript assembles the narration script (ID: titik → koma untuk desimal)
+// buildTTSScript assembles the narration script — conversational style
+// Target: 40-55 kata ≈ 15-18 detik voice over
 func buildTTSScript(event *models.GoldScrapedEvent, hargaJual, hargaBuyback int64, analysis *MarketAnalysis) string {
-	// Hook
-	script := analysis.HookTTS + " "
+	var b strings.Builder
 
-	// Bridge
-	script += "Cek harga hari ini. "
+	// 1. Hook — langsung dari AI, sudah conversational
+	b.WriteString(analysis.HookTTS)
+	b.WriteString(" ")
 
-	// Price info
-	script += fmt.Sprintf("Harga jual %s rupiah per gram. ", formatRupiah(hargaJual))
-	script += fmt.Sprintf("Buyback %s rupiah. ", formatRupiah(hargaBuyback))
-	script += fmt.Sprintf("Spread %s persen. ", formatDecimal(analysis.SpreadPct))
-
-	// Delta
-	if analysis.DeltaJual > 0 {
-		script += fmt.Sprintf("Naik %s rupiah dari kemarin. ", formatRupiah(abs(analysis.DeltaJual)))
-	} else if analysis.DeltaJual < 0 {
-		script += fmt.Sprintf("Turun %s rupiah dari kemarin. ", formatRupiah(abs(analysis.DeltaJual)))
-	} else {
-		script += "Stabil dari kemarin. "
+	// 2. Harga — ngobrol, bukan baca laporan
+	switch analysis.Condition {
+	case 1, 2: // Bullish
+		b.WriteString(fmt.Sprintf("Harga jual sekarang %s per gram ya, buyback %s. ",
+			formatRupiah(hargaJual), formatRupiah(hargaBuyback)))
+	case 3, 4: // Bearish
+		b.WriteString(fmt.Sprintf("Hari ini jual di %s per gram, buyback-nya %s. ",
+			formatRupiah(hargaJual), formatRupiah(hargaBuyback)))
+	case 5, 6: // High spread
+		b.WriteString(fmt.Sprintf("Harga jual %s, buyback %s per gram. ",
+			formatRupiah(hargaJual), formatRupiah(hargaBuyback)))
+	default:
+		b.WriteString(fmt.Sprintf("Jual %s per gram, buyback %s. ",
+			formatRupiah(hargaJual), formatRupiah(hargaBuyback)))
 	}
 
-	// Historical insight
+	// 3. Insight — spread + delta, pakai kata penghubung natural
+	b.WriteString(fmt.Sprintf("Spread %s persen. ", formatDecimal(analysis.SpreadPct)))
+
+	if analysis.DeltaJual > 10000 {
+		b.WriteString(fmt.Sprintf("Naik %s dari kemarin. ", formatRupiah(abs(analysis.DeltaJual))))
+	} else if analysis.DeltaJual < -10000 {
+		b.WriteString(fmt.Sprintf("Turun %s dari kemarin nih. ", formatRupiah(abs(analysis.DeltaJual))))
+	}
+
+	// 4. Trend — satu kalimat insight personal
 	switch analysis.Trend7d {
 	case "up":
-		script += "Tren 7 hari terakhir menunjukkan kenaikan. "
+		if analysis.Streak >= 3 {
+			b.WriteString(fmt.Sprintf("Udah %d hari naik terus! ", analysis.Streak))
+		} else {
+			b.WriteString("Tren minggu ini masih positif. ")
+		}
 	case "down":
-		script += "Tren 7 hari terakhir menunjukkan penurunan. "
+		if analysis.Streak >= 3 {
+			b.WriteString(fmt.Sprintf("Udah %d hari turun berturut-turut. ", analysis.Streak))
+		} else {
+			b.WriteString("Minggu ini agak melemah. ")
+		}
 	}
 
-	// CTA
-	script += "Update instan? Klik link di bio."
+	// 5. CTA — friendly, bukan robot
+	b.WriteString("Cek link di bio buat update tercepat ya!")
 
-	return script
+	return b.String()
 }
 
 // formatDecimal formats float with comma (ID locale) for TTS: 9.52 → "9,52"
