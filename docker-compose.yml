@@ -133,6 +133,23 @@ services:
     networks:
       - dnarmasid-net
 
+  video-short-generator:
+    build:
+      context: .
+      dockerfile: services/video-short-generator/Dockerfile
+    container_name: ${COMPOSE_PROJECT_NAME}-video-short-generator
+    restart: unless-stopped
+    env_file: .env
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - video-data:/app/volumes/video
+    networks:
+      - dnarmasid-net
+
   telegram-bot:
     build:
       context: .
@@ -209,3 +226,4 @@ volumes:
   mysql-data:
   redis-data:
   media-data:
+  video-data:

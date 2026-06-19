@@ -58,6 +58,13 @@ func main() {
 			} else {
 				log.Printf("[ai-generator] ✅ gold.processed published for %s (media-generator next)", event.Date)
 			}
+
+			// Parallel pipeline: publish to video.short.trigger so video-short-generator picks up
+			if err := q.Publish(queue.KeyVideoShortTrigger, event); err != nil {
+				log.Printf("[ai-generator] ❌ Failed to publish video.short.trigger: %v", err)
+			} else {
+				log.Printf("[ai-generator] ✅ video.short.trigger published for %s (video-short next)", event.Date)
+			}
 		}
 	}()
 
