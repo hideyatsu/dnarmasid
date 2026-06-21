@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -93,9 +94,9 @@ func (t *TTSGenerator) GenerateTTS(script string, filename string, condition int
 
 	cmd := exec.CommandContext(ctx, "edge-tts",
 		"--voice", voice,
-		"--rate", vc.Rate,
-		"--volume", volume,
-		"--pitch", vc.Pitch,
+		fmt.Sprintf("--rate=%s", vc.Rate),
+		fmt.Sprintf("--volume=%s", volume),
+		fmt.Sprintf("--pitch=%s", vc.Pitch),
 		"--write-subtitles", vttPath,
 		"--text", script,
 		"--write-media", audioPath,
@@ -137,7 +138,7 @@ func convertVTTtoASS(vttPath, assPath string) error {
 	var cues []cue
 
 	scanner := bufio.NewScanner(file)
-	timePattern := regexp.MustCompile(`(\d{2}:\d{2}:\d{2}\.\d{3})\s*-->\s*(\d{2}:\d{2}:\d{2}\.\d{3})`)
+	timePattern := regexp.MustCompile(`(\d{2}:\d{2}:\d{2}[.,]\d{3})\s*-->\s*(\d{2}:\d{2}:\d{2}[.,]\d{3})`)
 
 	var currentStart, currentEnd, currentText string
 	inCue := false
@@ -161,6 +162,10 @@ func convertVTTtoASS(vttPath, assPath string) error {
 		}
 
 		if inCue && line != "" {
+			// Skip cue numbers (e.g., "2", "3", "4") from Edge-TTS VTT
+			if _, err := strconv.Atoi(strings.TrimSpace(line)); err == nil {
+				continue
+			}
 			if currentText == "" {
 				currentText = line
 			} else {
@@ -242,6 +247,8 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 }
 
 func formatASSTime(vttTime string) string {
+	// VTT: "00:00:06,537" → ASS: "0:00:06.53"
+	vttTime = strings.Replace(vttTime, ",", ".", 1)
 	parts := strings.Split(vttTime, ":")
 	if len(parts) != 3 {
 		return vttTime
@@ -277,4 +284,164 @@ func GetAudioDuration(audioPath string) (float64, error) {
 	var duration float64
 	fmt.Sscanf(strings.TrimSpace(string(output)), "%f", &duration)
 	return duration, nil
+}
+
+// ConcatAudio merges multiple audio files into one using ffmpeg concat
+func (t *TTSGenerator) ConcatAudio(audioPaths []string, outputName string) (string, error) {
+	if len(audioPaths) == 0 {
+		return "", fmt.Errorf("no audio files to concat")
+	}
+	if len(audioPaths) == 1 {
+		return audioPaths[0], nil
+	}
+
+	// Create concat file list
+	listPath := filepath.Join(t.outputDir, outputName+"_list.txt")
+	var lines []string
+	for _, p := range audioPaths {
+		lines = append(lines, fmt.Sprintf("file '%s'", p))
+	}
+	if err := os.WriteFile(listPath, []byte(strings.Join(lines, "\n")), 0644); err != nil {
+		return "", fmt.Errorf("write concat list: %w", err)
+	}
+	defer os.Remove(listPath)
+
+	outPath := filepath.Join(t.outputDir, outputName+".mp3")
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "ffmpeg", "-y",
+		"-f", "concat", "-safe", "0", "-i", listPath,
+		"-c", "copy", outPath,
+	)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("ffmpeg concat: %w\n%s", err, string(output))
+	}
+	log.Printf("[tts] ✅ Concatenated %d audio → %s", len(audioPaths), outPath)
+	return outPath, nil
+}
+
+// MergeCaptions merges multiple ASS caption files with time offsets
+func (t *TTSGenerator) MergeCaptions(captionPaths, audioPaths []string, outputName string) (string, error) {
+	if len(captionPaths) == 0 {
+		return "", fmt.Errorf("no caption files to merge")
+	}
+
+	outPath := filepath.Join(t.outputDir, outputName+".ass")
+	out, err := os.Create(outPath)
+	if err != nil {
+		return "", err
+	}
+	defer out.Close()
+
+	// Write ASS header
+	header := `[Script Info]
+Title: DnarMasID Video Short Caption
+ScriptType: v4.00+
+PlayResX: 1080
+PlayResY: 1920
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Default,Montserrat,48,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,1,0,0,0,100,100,0,0,1,3,0,2,20,20,120,1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+`
+	out.WriteString(header)
+
+	offsetMs := 0.0
+	for i, capPath := range captionPaths {
+		// Get audio duration for this segment
+		var dur float64
+		if i < len(audioPaths) {
+			dur, _ = GetAudioDuration(audioPaths[i])
+			if dur <= 0 {
+				dur = 5.0
+			}
+		} else {
+			dur = 5.0
+		}
+
+		// Parse cues from this caption file
+		cues, err := parseASSCues(capPath)
+		if err != nil {
+			log.Printf("[tts] ⚠️ Skip caption %s: %v", capPath, err)
+			offsetMs += dur
+			continue
+		}
+
+		for _, c := range cues {
+			start := formatASSTime(addMs(c.startRaw, offsetMs))
+			end := formatASSTime(addMs(c.endRaw, offsetMs))
+			out.WriteString(fmt.Sprintf("Dialogue: 0,%s,%s,Default,,0,0,0,,%s\n", start, end, c.text))
+		}
+
+		offsetMs += dur
+	}
+
+	log.Printf("[tts] ✅ Merged %d captions → %s", len(captionPaths), outPath)
+	return outPath, nil
+}
+
+type assCue struct {
+	startRaw string
+	endRaw   string
+	text     string
+}
+
+func parseASSCues(path string) ([]assCue, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
+	var cues []assCue
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if !strings.HasPrefix(line, "Dialogue:") {
+			continue
+		}
+		parts := strings.SplitN(line, ",", 10)
+		if len(parts) < 10 {
+			continue
+		}
+		cues = append(cues, assCue{
+			startRaw: strings.TrimSpace(parts[1]),
+			endRaw:   strings.TrimSpace(parts[2]),
+			text:     strings.TrimSpace(parts[9]),
+		})
+	}
+	return cues, scanner.Err()
+}
+
+// addMs adds seconds offset to ASS time string "0:00:05.23"
+func addMs(timeStr string, offsetSec float64) string {
+	// Parse "H:MM:SS.CC"
+	parts := strings.Split(timeStr, ":")
+	if len(parts) != 3 {
+		return timeStr
+	}
+	h, _ := strconv.Atoi(parts[0])
+	m, _ := strconv.Atoi(parts[1])
+	secParts := strings.Split(parts[2], ".")
+	s, _ := strconv.Atoi(secParts[0])
+	cs := 0
+	if len(secParts) > 1 {
+		cs, _ = strconv.Atoi(secParts[1])
+	}
+
+	totalMs := float64(h*3600+m*60+s) + float64(cs)/100.0 + offsetSec
+	if totalMs < 0 {
+		totalMs = 0
+	}
+
+	newH := int(totalMs) / 3600
+	newM := (int(totalMs) % 3600) / 60
+	newS := int(totalMs) % 60
+	newCs := int((totalMs - float64(int(totalMs))) * 100)
+	return fmt.Sprintf("%d:%02d:%02d.%02d", newH, newM, newS, newCs)
 }

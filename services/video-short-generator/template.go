@@ -73,6 +73,23 @@ func (r *TemplateRenderer) RenderCTA() (string, error) {
 	return r.renderToPNG(string(html), "cta.png")
 }
 
+func (r *TemplateRenderer) RenderInsight(date, badgeClass, badgeText, headline, detail, spreadPct, trendClass, trendLabel string) (string, error) {
+	html, err := os.ReadFile(filepath.Join(r.templateDir, "insightTemplate.html"))
+	if err != nil {
+		return "", fmt.Errorf("read insight template: %w", err)
+	}
+	content := string(html)
+	content = strings.ReplaceAll(content, "{{date}}", date)
+	content = strings.ReplaceAll(content, "{{insight_badge_class}}", badgeClass)
+	content = strings.ReplaceAll(content, "{{insight_badge_text}}", badgeText)
+	content = strings.ReplaceAll(content, "{{insight_headline}}", headline)
+	content = strings.ReplaceAll(content, "{{insight_detail}}", detail)
+	content = strings.ReplaceAll(content, "{{spread_pct}}", spreadPct)
+	content = strings.ReplaceAll(content, "{{trend_class}}", trendClass)
+	content = strings.ReplaceAll(content, "{{trend_label}}", trendLabel)
+	return r.renderToPNG(content, "insight.png")
+}
+
 func (r *TemplateRenderer) renderToPNG(htmlContent, outputName string) (string, error) {
 	tmpHTML := filepath.Join(r.outputDir, strings.TrimSuffix(outputName, ".png")+".html")
 	if err := os.WriteFile(tmpHTML, []byte(htmlContent), 0644); err != nil {

@@ -49,6 +49,7 @@ type MarketAnalysis struct {
 	NearHigh30d  bool
 	High7d       int64
 	Low7d        int64
+	PriceHistory7d []int64 // last 7 days sell prices for AI narrator
 	HookTTS      string
 	HookVisual   string
 	VisualBadge  string
@@ -194,6 +195,7 @@ func AnalyzeMarket(event *models.GoldScrapedEvent, db *gorm.DB) (*MarketAnalysis
 	}
 	analysis.High7d = high7d
 	analysis.Low7d = low7d
+	analysis.PriceHistory7d = prices7dJual
 	analysis.NearHigh7d = high7d > 0 && (float64(currentJual)/float64(high7d)) > 0.98
 	analysis.NearLow7d = low7d > 0 && (float64(currentJual)/float64(low7d)) < 1.02
 
@@ -386,4 +388,44 @@ func abs(n int64) int64 {
 
 func ensureDir(path string) {
 	os.MkdirAll(path, 0755)
+}
+
+// getInsightBadgeClass returns CSS class for insight badge color
+func getInsightBadgeClass(cond MarketCondition) string {
+	switch cond {
+	case ConditionBullishStrong, ConditionBullishModerate, ConditionLowSpreadBullish:
+		return "bullish"
+	case ConditionBearishStreak, ConditionBearishLow, ConditionLowSpreadBearish:
+		return "bearish"
+	case ConditionHighSpreadVolatile, ConditionHighSpreadCalm:
+		return "warning"
+	case ConditionNearATH:
+		return "fire"
+	default:
+		return "neutral"
+	}
+}
+
+// getTrendClass returns CSS class for trend indicator
+func getTrendClass(trend string) string {
+	switch trend {
+	case "up":
+		return "trend-up"
+	case "down":
+		return "trend-down"
+	default:
+		return "trend-flat"
+	}
+}
+
+// getTrendLabel returns human-readable trend label
+func getTrendLabel(trend string) string {
+	switch trend {
+	case "up":
+		return "TREN NAIK"
+	case "down":
+		return "TREN TURUN"
+	default:
+		return "SIDWAYS"
+	}
 }

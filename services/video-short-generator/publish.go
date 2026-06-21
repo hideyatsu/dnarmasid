@@ -31,7 +31,7 @@ func (p *Publisher) UploadVideo(videoPath string, event *models.GoldScrapedEvent
 		return "", fmt.Errorf("read video file: %w", err)
 	}
 
-	date := event.Date
+	date := safeDate(event.Date)
 	// Note: R2 GetPublicURL uses filepath.Base, so avoid subdirectory prefixes
 	r2Key := fmt.Sprintf("videoshort-%s-%d.mp4", date, time.Now().Unix())
 

@@ -41,6 +41,7 @@ func main() {
 	tts := NewTTSGenerator(outputDir)
 	stitcher := NewVideoStitcher(outputDir)
 	publisher := NewPublisher(r2Uploader)
+	narratorAI := NewNarratorAI(cfg)
 
 	log.Printf("[video-short] ✅ Ready. Waiting for %s events...", queue.KeyVideoShortTrigger)
 
@@ -62,7 +63,7 @@ func main() {
 			log.Printf("[video-short] 📥 Event received: date=%s price_id=%d", event.Date, event.PriceID)
 
 			// Process video
-			if err := processVideoShort(cfg, database, q, renderer, tts, stitcher, publisher, &event, outputDir); err != nil {
+			if err := processVideoShort(cfg, database, q, renderer, tts, stitcher, publisher, narratorAI, &event, outputDir); err != nil {
 				log.Printf("[video-short] ❌ Pipeline failed: %v", err)
 				continue
 			}
@@ -74,7 +75,7 @@ func main() {
 
 func processVideoShort(cfg *config.Config, database *gorm.DB, q *queue.Client,
 	renderer *TemplateRenderer, tts *TTSGenerator, stitcher *VideoStitcher, publisher *Publisher,
-	event *models.GoldScrapedEvent, outputDir string) error {
+	narratorAI *NarratorAI, event *models.GoldScrapedEvent, outputDir string) error {
 
 	// ── STEP 1: Market Analysis ──
 	log.Println("[video-short] 📊 Step 1: Market Analysis...")
@@ -98,14 +99,48 @@ func processVideoShort(cfg *config.Config, database *gorm.DB, q *queue.Client,
 		hargaBuyback = event.Prices[0].BuyPrice
 	}
 
-	// ── STEP 3: Render Frames ──
-	log.Println("[video-short] 🎨 Step 2: Rendering frames...")
+	// ── STEP 3: Generate AI Content (slide text + narration) ──
+	log.Println("[video-short] 🤖 Step 2: Generating AI content...")
+
+	narratorData := NarratorData{
+		Date:           event.Date,
+		HargaJual:      hargaJual,
+		HargaBuyback:   hargaBuyback,
+		SpreadPct:      analysis.SpreadPct,
+		DeltaJual:      analysis.DeltaJual,
+		Trend7d:        analysis.Trend7d,
+		Streak:         analysis.Streak,
+		Condition:      int(analysis.Condition),
+		ConditionLabel: conditionLabel(int(analysis.Condition)),
+		Volatility:     analysis.Volatility,
+		PriceHistory:   buildPriceHistory(analysis.PriceHistory7d),
+	}
+
+	// Try AI first, fallback to template
+	var aiContent *AIContentResponse
+	if resp, err := narratorAI.GenerateContent(narratorData); err == nil {
+		aiContent = resp
+		log.Printf("[video-short] 🤖 AI Content generated — slide: %s/%s, nar: hook=%d price=%d insight=%d cta=%d chars",
+			aiContent.Slide.HookBadge, aiContent.Slide.HookHeadline,
+			len(aiContent.Narration.Hook), len(aiContent.Narration.Price),
+			len(aiContent.Narration.Insight), len(aiContent.Narration.CTA))
+	} else {
+		log.Printf("[video-short] ⚠️ AI Content failed (%v), using fallback", err)
+		aiContent = buildFallbackContent(event, hargaJual, hargaBuyback, analysis)
+	}
+
+	log.Printf("[video-short] 📝 TTS — Hook: %s | Price: %s | Insight: %s | CTA: %s",
+		truncate(aiContent.Narration.Hook, 50), truncate(aiContent.Narration.Price, 50),
+		truncate(aiContent.Narration.Insight, 50), truncate(aiContent.Narration.CTA, 50))
+
+	// ── STEP 4: Render Frames with AI content ──
+	log.Println("[video-short] 🎨 Step 3: Rendering frames...")
 
 	hookPath, err := renderer.RenderHook(
 		event.Date,
-		analysis.VisualBadge,
-		analysis.HookVisual,
-		"Harga Emas Hari Ini",
+		aiContent.Slide.HookBadge,
+		aiContent.Slide.HookHeadline,
+		aiContent.Slide.HookSubtitle,
 	)
 	if err != nil {
 		return fmt.Errorf("render hook: %w", err)
@@ -116,52 +151,97 @@ func processVideoShort(cfg *config.Config, database *gorm.DB, q *queue.Client,
 		return fmt.Errorf("render price: %w", err)
 	}
 
+	insightPath, err := renderer.RenderInsight(
+		event.Date,
+		getInsightBadgeClass(analysis.Condition),
+		aiContent.Slide.InsightBadge,
+		aiContent.Slide.InsightHeadline,
+		aiContent.Slide.InsightDetail,
+		formatDecimal(analysis.SpreadPct),
+		getTrendClass(analysis.Trend7d),
+		getTrendLabel(analysis.Trend7d),
+	)
+	if err != nil {
+		return fmt.Errorf("render insight: %w", err)
+	}
+
 	ctaPath, err := renderer.RenderCTA()
 	if err != nil {
 		return fmt.Errorf("render cta: %w", err)
 	}
 
-	// ── STEP 4: Generate TTS ──
-	log.Println("[video-short] 🎙️ Step 3: Generating TTS...")
-	script := buildTTSScript(event, hargaJual, hargaBuyback, analysis)
-	log.Printf("[video-short] 📝 TTS Script: %s", script)
-	audioPath, captionPath, err := tts.GenerateTTS(sanitizeTTSNumbers(script), fmt.Sprintf("narration-%s", event.Date), int(analysis.Condition))
+	// ── STEP 5: Generate 4-segment TTS ──
+	log.Println("[video-short] 🎙️ Step 4: Generating segmented TTS...")
+
+	dateStr := safeDate(event.Date)
+	segmentScripts := []string{
+		sanitizeTTSNumbers(aiContent.Narration.Hook),
+		sanitizeTTSNumbers(aiContent.Narration.Price),
+		sanitizeTTSNumbers(aiContent.Narration.Insight),
+		sanitizeTTSNumbers(aiContent.Narration.CTA),
+	}
+	segmentNames := []string{"hook", "price", "insight", "cta"}
+
+	var audioPaths []string
+	var captionPaths []string
+	for i, script := range segmentScripts {
+		audioPath, captionPath, err := tts.GenerateTTS(
+			script,
+			fmt.Sprintf("seg-%s-%s", segmentNames[i], dateStr),
+			int(analysis.Condition),
+		)
+		if err != nil {
+			return fmt.Errorf("tts segment %s: %w", segmentNames[i], err)
+		}
+		audioPaths = append(audioPaths, audioPath)
+		captionPaths = append(captionPaths, captionPath)
+	}
+
+	// Concatenate 4 audio files into 1
+	mergedAudio, err := tts.ConcatAudio(audioPaths, fmt.Sprintf("narration-%s", dateStr))
 	if err != nil {
-		return fmt.Errorf("tts: %w", err)
+		return fmt.Errorf("concat audio: %w", err)
+	}
+
+	// Merge 4 caption files with time offsets
+	mergedCaption, err := tts.MergeCaptions(captionPaths, audioPaths, fmt.Sprintf("caption-%s", dateStr))
+	if err != nil {
+		return fmt.Errorf("merge captions: %w", err)
 	}
 
 	// Get audio duration
-	duration, err := GetAudioDuration(audioPath)
+	duration, err := GetAudioDuration(mergedAudio)
 	if err != nil {
-		duration = 18.0
-		log.Printf("[video-short] ⚠️ Could not get audio duration, using default: 18s")
+		duration = 25.0
+		log.Printf("[video-short] ⚠️ Could not get audio duration, using default: 25s")
 	}
 
-	// ── STEP 5: Stitch Video ──
-	log.Println("[video-short] 🎬 Step 4: Stitching video...")
-	outputName := fmt.Sprintf("video-short-%s.mp4", event.Date)
+	// ── STEP 6: Stitch Video (4 frames) ──
+	log.Println("[video-short] 🎬 Step 5: Stitching video (4 frames)...")
+	outputName := fmt.Sprintf("video-short-%s.mp4", safeDate(event.Date))
 	videoPath, err := stitcher.Stitch(StitchOptions{
-		HookFrame:   hookPath,
-		PriceFrame:  pricePath,
-		CTAFrame:    ctaPath,
-		AudioPath:   audioPath,
-		CaptionPath: captionPath,
-		Duration:    duration,
-		OutputName:  outputName,
+		HookFrame:    hookPath,
+		PriceFrame:   pricePath,
+		InsightFrame: insightPath,
+		CTAFrame:     ctaPath,
+		AudioPath:    mergedAudio,
+		CaptionPath:  mergedCaption,
+		Duration:     duration,
+		OutputName:   outputName,
 	})
 	if err != nil {
 		return fmt.Errorf("stitch: %w", err)
 	}
 
-	// ── STEP 6: Upload to R2 ──
-	log.Println("[video-short] ☁️ Step 5: Uploading to R2...")
+	// ── STEP 7: Upload to R2 ──
+	log.Println("[video-short] ☁️ Step 6: Uploading to R2...")
 	publicURL, err := publisher.UploadVideo(videoPath, event)
 	if err != nil {
 		return fmt.Errorf("publish: %w", err)
 	}
 
-	// ── STEP 7: Save media record to DB ──
-	log.Println("[video-short] 💾 Step 6: Saving media record...")
+	// ── STEP 8: Save media record to DB ──
+	log.Println("[video-short] 💾 Step 7: Saving media record...")
 	media := models.GeneratedMedia{
 		PriceID:   event.PriceID,
 		MediaType: models.MediaTypeVideo,
@@ -188,7 +268,14 @@ func buildTTSScript(event *models.GoldScrapedEvent, hargaJual, hargaBuyback int6
 	b.WriteString(", ")
 
 	// 2. Bridging ke harga — natural transition
-	b.WriteString("oke, ")
+	switch analysis.Condition {
+	case 1, 2: // Bullish
+		b.WriteString("kabar baiknya, ")
+	case 3, 4: // Bearish
+		b.WriteString("saat ini, ")
+	default:
+		b.WriteString("dan, ")
+	}
 
 	// 3. Harga — conversational dengan flow
 	switch analysis.Condition {
@@ -264,6 +351,60 @@ func sanitizeTTSNumbers(text string) string {
 	// Uses word boundary + negative lookahead for 3rd digit
 	re := regexp.MustCompile(`(\d+)\.(\d{1,2})\b`)
 	return re.ReplaceAllString(text, "$1,$2")
+}
+
+// safeDate converts "20 Jun 2026" → "2026-06-20" for filename safety (no spaces)
+func safeDate(dateStr string) string {
+	t, err := time.Parse("2 Jan 2006", dateStr)
+	if err != nil {
+		// Fallback: just replace spaces with hyphens
+		return strings.ReplaceAll(dateStr, " ", "-")
+	}
+	return t.Format("2006-01-02")
+}
+
+// truncate shortens text for logging
+func truncate(s string, max int) string {
+	if len(s) <= max {
+		return s
+	}
+	return s[:max] + "..."
+}
+
+// buildFallbackContent generates fallback AIContentResponse when AI fails
+func buildFallbackContent(event *models.GoldScrapedEvent, hargaJual, hargaBuyback int64, analysis *MarketAnalysis) *AIContentResponse {
+	resp := &AIContentResponse{}
+
+	// Slide content from analysis
+	resp.Slide.HookBadge = analysis.VisualBadge
+	resp.Slide.HookHeadline = analysis.HookVisual
+	resp.Slide.HookSubtitle = "Harga Emas Hari Ini"
+
+	// Insight from hook templates
+	if hook, ok := hookTemplates[analysis.Condition]; ok {
+		resp.Slide.InsightBadge = hook.Badge
+		resp.Slide.InsightHeadline = hook.Visual
+	} else {
+		resp.Slide.InsightBadge = "⚖️"
+		resp.Slide.InsightHeadline = "STABIL"
+	}
+
+	resp.Slide.InsightDetail = fmt.Sprintf("Spread %.1f%%, tren %s %d hari", analysis.SpreadPct, analysis.Trend7d, analysis.Streak)
+
+	// Narration from buildTTSScript as single block
+	fullScript := buildTTSScript(event, hargaJual, hargaBuyback, analysis)
+	resp.Narration.Hook = analysis.HookTTS
+	resp.Narration.Price = fmt.Sprintf("Harga jual sekarang %s per gram, buyback %s, spread %s persen",
+		formatRupiah(hargaJual), formatRupiah(hargaBuyback), formatDecimal(analysis.SpreadPct))
+	resp.Narration.Insight = resp.Slide.InsightDetail
+	resp.Narration.CTA = "Buat update harga real-time, cek link di bio ya, jangan ketinggalan!"
+
+	// Ensure no empty
+	if fullScript != "" {
+		_ = fullScript // used for logging context only
+	}
+
+	return resp
 }
 
 // Helper functions are in analysis.go
