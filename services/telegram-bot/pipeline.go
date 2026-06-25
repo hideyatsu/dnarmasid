@@ -259,18 +259,23 @@ func (p *PipelineHandler) triggerRepublish(chatID int64) {
 		trendEmoji = "🔴"
 	}
 
-	// Build initial steps for progress bar
-	steps := []ProgressStep{
+	// Build initial steps for progress bar — two parallel pipelines
+	stepsA := []ProgressStep{
 		{Name: "Fetch Data", Status: "done", Detail: fmt.Sprintf("1g Antam — Rp %s", formatPriceIDR(event.Prices[0].BuyPrice))},
 		{Name: "AI Caption", Status: "processing", Detail: fmt.Sprintf("%s %s", trendEmoji, event.Trend)},
 		{Name: "Media Render", Status: "pending"},
 		{Name: "Repliz Upload", Status: "pending"},
 	}
+	stepsB := []ProgressStep{
+		{Name: "AI Caption", Status: "processing", Detail: fmt.Sprintf("%s %s", trendEmoji, event.Trend)},
+		{Name: "Video Short", Status: "pending"},
+	}
 
 	// Send initial progress message
 	initialText := RenderProgress(&RepublishSession{
-		Date:  event.Date,
-		Steps: steps,
+		Date:   event.Date,
+		StepsA: stepsA,
+		StepsB: stepsB,
 	})
 	msg := tgbotapi.NewMessage(chatID, initialText)
 	msg.ParseMode = "Markdown"
@@ -283,7 +288,7 @@ func (p *PipelineHandler) triggerRepublish(chatID int64) {
 
 	// Register session in tracker
 	if p.tracker != nil {
-		p.tracker.StartSession(chatID, sent.MessageID, event.PriceID, event.Date, steps)
+		p.tracker.StartSession(chatID, sent.MessageID, event.PriceID, event.Date, stepsA, stepsB)
 	}
 
 	// Trigger AI generator (which triggers media, then repliz via serial pipeline)

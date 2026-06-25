@@ -245,3 +245,59 @@ func (b *Broadcaster) SendScrapeFailureNotification(event *models.ScrapeFailedEv
 
 	return nil
 }
+
+// SendVideoShortSummary mengirim summary video short ke admin.
+func (b *Broadcaster) SendVideoShortSummary(event *models.VideoShortDoneEvent) error {
+	if b.cfg.TelegramGroupID == 0 {
+		return fmt.Errorf("TELEGRAM_GROUP_ID belum dikonfigurasi")
+	}
+
+	chatID := b.cfg.TelegramGroupID
+	threadID := 0
+
+	var msgText string
+	if event.Error != "" {
+		msgText = fmt.Sprintf(
+			"🎬 <b>Video Short GAGAL</b> — %s\n\n❌ Error: <code>%s</code>",
+			event.Date, html.EscapeString(event.Error),
+		)
+	} else {
+		msgText = fmt.Sprintf(
+			"🎬 <b>Video Short Selesai</b> — %s\n\n"+
+				"📊 Kondisi: %s (hook: %s)\n"+
+				"💰 Harga Jual: Rp %s\n"+
+				"💸 Buyback: Rp %s\n"+
+				"📈 Spread: %.1f%%\n"+
+				"⏱️ Durasi: %.1f detik\n"+
+				"🔗 %s",
+			event.Date,
+			event.ConditionLbl, event.HookVisual,
+			formatRupiah(event.HargaJual),
+			formatRupiah(event.HargaBuyback),
+			event.SpreadPct,
+			event.DurationSec,
+			event.PublicURL,
+		)
+	}
+
+	b.sendHTML(chatID, threadID, msgText)
+	log.Printf("[broadcaster] 🎬 Sent video short summary to chat %d (thread %d)", chatID, threadID)
+
+	return nil
+}
+
+// formatRupiah formats int64 to "1.234.567" style.
+func formatRupiah(amount int64) string {
+	s := fmt.Sprintf("%d", amount)
+	if len(s) <= 3 {
+		return s
+	}
+	var result []byte
+	for i, c := range s {
+		if i > 0 && (len(s)-i)%3 == 0 {
+			result = append(result, '.')
+		}
+		result = append(result, byte(c))
+	}
+	return string(result)
+}

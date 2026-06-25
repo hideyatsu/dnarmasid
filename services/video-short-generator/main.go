@@ -65,6 +65,16 @@ func main() {
 			// Process video
 			if err := processVideoShort(cfg, database, q, renderer, tts, stitcher, publisher, narratorAI, &event, outputDir); err != nil {
 				log.Printf("[video-short] ❌ Pipeline failed: %v", err)
+
+				// Publish error summary to admin
+				failEvent := models.VideoShortDoneEvent{
+					PriceID: event.PriceID,
+					Date:    event.Date,
+					Error:   err.Error(),
+				}
+				if pubErr := q.Publish(queue.KeyVideoShortDone, failEvent); pubErr != nil {
+					log.Printf("[video-short] ⚠️ Failed to publish video.short.done (error): %v", pubErr)
+				}
 				continue
 			}
 
@@ -255,6 +265,26 @@ func processVideoShort(cfg *config.Config, database *gorm.DB, q *queue.Client,
 	}
 
 	log.Printf("[video-short] ✅ Video ready: %s", publicURL)
+
+	// ── STEP 9: Publish summary to admin ──
+	doneEvent := models.VideoShortDoneEvent{
+		PriceID:      event.PriceID,
+		Date:         event.Date,
+		PublicURL:    publicURL,
+		Condition:    int(analysis.Condition),
+		ConditionLbl: conditionLabel(int(analysis.Condition)),
+		HookVisual:   analysis.HookVisual,
+		HargaJual:    hargaJual,
+		HargaBuyback: hargaBuyback,
+		SpreadPct:    analysis.SpreadPct,
+		DurationSec:  duration,
+	}
+	if err := q.Publish(queue.KeyVideoShortDone, doneEvent); err != nil {
+		log.Printf("[video-short] ⚠️ Failed to publish video.short.done: %v", err)
+	} else {
+		log.Printf("[video-short] ✅ video.short.done published for %s", event.Date)
+	}
+
 	return nil
 }
 

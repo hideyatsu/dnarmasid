@@ -269,11 +269,6 @@ HANYA output JSON, tanpa penjelasan.`,
 	)
 }
 
-// buildPrompt builds the legacy single-paragraph prompt (kept for reference)
-func (n *NarratorAI) buildPrompt(d NarratorData) string {
-	return n.buildSegmentedPrompt(d)
-}
-
 func abs64(n int64) int64 {
 	if n < 0 {
 		return -n

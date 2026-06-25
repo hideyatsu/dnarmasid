@@ -174,8 +174,15 @@ func main() {
 				sess = tracker.UpdateStep(event.PriceID, "Repliz Upload", "done", "Queued for posting")
 				if sess != nil {
 					tracker.EditMessage(sess)
-					tracker.SendToAdmin(sess.ChatID, fmt.Sprintf("🚀 *Republish Complete* — %s\n\n✅ Semua tahap selesai. Proses posting berjalan otomatis ke Instagram/Facebook.", event.Date))
-					go tracker.RemoveSession(event.PriceID)
+					// Group A (Infografis) complete independently
+					if tracker.CheckGroupADone(event.PriceID) && !sess.GroupADone {
+						sess.GroupADone = true
+						tracker.SendToAdmin(sess.ChatID, fmt.Sprintf("📊 *Infografis Pipeline Complete — %s*\n\n✅ Fetch Data → AI → Media → Repliz selesai.", event.Date))
+					}
+					// Both groups complete → cleanup session
+					if tracker.AllDone(event.PriceID) {
+						go tracker.RemoveSession(event.PriceID)
+					}
 				}
 			}
 		}
@@ -204,11 +211,57 @@ func main() {
 		}
 	}()
 
-	// ─── Goroutine 6: Timeout watcher — mark stale republish sessions as failed
+	// ─── Goroutine 6: Consume video.short.done → kirim summary ke admin
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		log.Println("[telegram-bot] ⏱️ Republish timeout watcher active (timeout: 120s)")
+		log.Println("[telegram-bot] 📡 Listening video.short.done queue...")
+		for {
+			select {
+			case <-quit:
+				return
+			default:
+				var event models.VideoShortDoneEvent
+				err := q.ConsumeJSON(queue.KeyVideoShortDone, 5*time.Second, &event)
+				if err != nil {
+					continue
+				}
+				log.Printf("[telegram-bot] 📥 video.short.done received: date=%s, price_id=%d", event.Date, event.PriceID)
+
+				// Update progress tracker if this is a republish session
+				if tracker != nil {
+					var sess *RepublishSession
+					if event.Error != "" {
+						sess = tracker.UpdateStep(event.PriceID, "Video Short", "error", "Pipeline failed")
+					} else {
+						sess = tracker.UpdateStep(event.PriceID, "Video Short", "done", "Video uploaded to R2")
+					}
+					if sess != nil {
+						tracker.EditMessage(sess)
+						// Group B (Video Short) complete independently
+						if tracker.CheckGroupBDone(event.PriceID) && !sess.GroupBDone {
+							sess.GroupBDone = true
+							tracker.SendToAdmin(sess.ChatID, fmt.Sprintf("🎬 *Video Short Pipeline Complete — %s*\n\n✅ AI Caption → Video Short selesai.", event.Date))
+						}
+						// Both groups complete → cleanup session
+						if tracker.AllDone(event.PriceID) {
+							go tracker.RemoveSession(event.PriceID)
+						}
+					}
+				}
+
+				if err := broadcaster.SendVideoShortSummary(&event); err != nil {
+					log.Printf("[telegram-bot] ❌ SendVideoShortSummary error: %v", err)
+				}
+			}
+		}
+	}()
+
+	// ─── Goroutine 7: Timeout watcher — mark stale republish sessions as failed
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		log.Println("[telegram-bot] ⏱️ Republish timeout watcher active (timeout: 300s)")
 		ticker := time.NewTicker(15 * time.Second)
 		defer ticker.Stop()
 		for {
@@ -216,13 +269,13 @@ func main() {
 			case <-quit:
 				return
 			case <-ticker.C:
-				staleSessions := tracker.GetStaleSessions(120 * time.Second)
+				staleSessions := tracker.GetStaleSessions(300 * time.Second)
 				for _, sess := range staleSessions {
 					log.Printf("[telegram-bot] ⏱️ Session %d (%s) timed out, marking failed", sess.PriceID, sess.Date)
-					sess = tracker.MarkFailed(sess.PriceID, "Timeout (120s)")
+					sess = tracker.MarkFailed(sess.PriceID, "Timeout (300s)")
 					if sess != nil {
 						tracker.EditMessage(sess)
-						tracker.SendToAdmin(sess.ChatID, fmt.Sprintf("🔴 *Republish Failed* — %s\n\nPipeline timeout setelah 120 detik. Periksa log untuk detail.", sess.Date))
+						tracker.SendToAdmin(sess.ChatID, fmt.Sprintf("🔴 *Republish Failed* — %s\n\nPipeline timeout setelah 300 detik. Periksa log untuk detail.", sess.Date))
 						go tracker.RemoveSession(sess.PriceID)
 					}
 				}
