@@ -25,6 +25,8 @@ const (
 	KeyMediaGenerationCompleted = "media.generation.completed" // media-generator → repliz-uploader
 	KeyBotMediaDone             = "bot.media.done"             // media-generator → telegram-bot (republish progress, no competition)
 	KeyGoldScrapedThreads       = "gold.scraped.threads"       // scraper → ai-generator (threads)
+	KeyVideoShortTrigger        = "video.short.trigger"        // ai-generator → video-short-generator (parallel pipeline)
+	KeyVideoShortDone           = "video.short.done"           // video-short-generator → telegram-bot (admin summary)
 )
 
 type Client struct {
