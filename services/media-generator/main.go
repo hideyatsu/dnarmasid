@@ -33,7 +33,7 @@ func main() {
 
 	generator := NewMediaGenerator(cfg, database, r2Uploader)
 
-	log.Printf("[media-generator] ✅ Ready. Waiting for %s events...", queue.KeyGoldScrapedMedia)
+	log.Printf("[media-generator] ✅ Ready. Waiting for %s events...", queue.KeyGoldProcessed)
 
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
@@ -45,7 +45,7 @@ func main() {
 			return
 		default:
 			var event models.GoldScrapedEvent
-			err := q.ConsumeJSON(queue.KeyGoldScrapedMedia, 5*time.Second, &event)
+			err := q.ConsumeJSON(queue.KeyGoldProcessed, 5*time.Second, &event)
 			if err != nil {
 				continue
 			}
@@ -71,31 +71,61 @@ func main() {
 				} else {
 					log.Printf("[media-generator] ✅ Image media.ready published: %s", imgEvent.FileName)
 
-					// Trigger Repliz Uploader Event with Polling for AI Caption
-					go func(priceID uint, date string, imgEvt *models.MediaReadyEvent, screenshotPriceURL string, screenshotBuybackURL string, ctaImageURL string) {
-						var caption string
-						// Poll for max 60 seconds (20 retries * 3s)
-						for i := 0; i < 20; i++ {
-							var content models.GeneratedContent
-							if err := database.Where("price_id = ? AND content_type = ?", priceID, models.ContentCaption).First(&content).Error; err == nil && content.ContentText != "" {
-								caption = content.ContentText
-								break
-							}
-							time.Sleep(3 * time.Second)
-						}
+					// Generate new slides for 7-slide carousel (hero, bridging, features)
+					var heroSlideURL, bridgingSlideURL, featureHargaURL, featureStokAlertURL, featureStokButikURL string
 
-						if caption == "" {
-							log.Printf("[media-generator] ⚠️ Could not fetch AI caption for Repliz event after polling")
+					if event.ScreenshotPriceURL != "" {
+						if url, err := generator.GenerateHeroScreenshot(event.ScreenshotPriceURL, event.Date); err != nil {
+							log.Printf("[media-generator] ⚠️ Hero screenshot failed (non-blocking): %v", err)
+						} else {
+							heroSlideURL = url
+						}
+					} else {
+						log.Printf("[media-generator] ℹ️ Screenshot price URL kosong — skip hero slide")
+					}
+
+					if url, err := generator.GenerateBridgingSlide(event.Date); err != nil {
+						log.Printf("[media-generator] ⚠️ Bridging slide failed (non-blocking): %v", err)
+					} else {
+						bridgingSlideURL = url
+					}
+
+					// Use static slides directly from R2 (no template rendering needed)
+					if cfg.SlideHargaNotifURL != "" {
+						featureHargaURL = cfg.SlideHargaNotifURL
+					}
+
+					if cfg.SlideStokAlertURL != "" {
+						featureStokAlertURL = cfg.SlideStokAlertURL
+					}
+
+					if cfg.SlideStokButikURL != "" {
+						featureStokButikURL = cfg.SlideStokButikURL
+					}
+
+					// Trigger Repliz Uploader Event (Direct fetch: AI caption is already saved by ai-generator before gold.processed)
+					go func(priceID uint, date string, imgEvt *models.MediaReadyEvent, screenshotPriceURL string, screenshotBuybackURL string, ctaImageURL string, heroSlideURL string, bridgingSlideURL string, featureHargaURL string, featureStokAlertURL string, featureStokButikURL string) {
+						var content models.GeneratedContent
+						var caption string
+						if err := database.Where("price_id = ? AND content_type = ?", priceID, models.ContentCaption).First(&content).Error; err == nil && content.ContentText != "" {
+							caption = content.ContentText
+						} else {
+							log.Printf("[media-generator] ⚠️ Could not fetch AI caption for Repliz event: %v", err)
 						}
 
 						replizEvent := models.MediaGenerationCompletedEvent{
-							PriceID:              priceID,
-							Date:                 date,
-							Caption:              caption,
-							InfographicURL:       imgEvt.PublicURL,
-							CTAImageURL:          ctaImageURL,
-							ScreenshotPriceURL:   screenshotPriceURL,
-							ScreenshotBuybackURL: screenshotBuybackURL,
+							PriceID:                    priceID,
+							Date:                       date,
+							Caption:                    caption,
+							InfographicURL:             imgEvt.PublicURL,
+							CTAImageURL:                ctaImageURL,
+							ScreenshotPriceURL:         screenshotPriceURL,
+							ScreenshotBuybackURL:       screenshotBuybackURL,
+							HeroScreenshotSlideURL:     heroSlideURL,
+							BridgingSlideURL:           bridgingSlideURL,
+							FeatureHargaSlideURL:       featureHargaURL,
+							FeatureStokAlertSlideURL:   featureStokAlertURL,
+							FeatureStokButikSlideURL:   featureStokButikURL,
 						}
 
 						if err := q.Publish(queue.KeyMediaGenerationCompleted, replizEvent); err != nil {
@@ -103,7 +133,11 @@ func main() {
 						} else {
 							log.Printf("[media-generator] ✅ Repliz event published for date %s", date)
 						}
-					}(event.PriceID, event.Date, imgEvent, event.ScreenshotPriceURL, event.ScreenshotBuybackURL, ctaURL)
+						// Also publish to bot channel for republish progress (no consumer competition)
+						if err := q.Publish(queue.KeyBotMediaDone, replizEvent); err != nil {
+							log.Printf("[media-generator] ⚠️ Failed to publish bot.media.done: %v", err)
+						}
+					}(event.PriceID, event.Date, imgEvent, event.ScreenshotPriceURL, event.ScreenshotBuybackURL, ctaURL, heroSlideURL, bridgingSlideURL, featureHargaURL, featureStokAlertURL, featureStokButikURL)
 				}
 			}
 

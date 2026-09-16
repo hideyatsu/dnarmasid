@@ -28,12 +28,17 @@ type Config struct {
 	TelegramThreadGeneralID int
 	TelegramThreadPostID    int
 
-	// AI (Ollama/Gemini)
-	AIProvider   string
-	OllamaHost   string
-	OllamaModel  string
-	GeminiAPIKey string
-	GeminiModel  string
+	// AI (Ollama/Gemini/9router)
+	AIProvider      string
+	OllamaHost      string
+	OllamaModel     string
+	GeminiAPIKey    string
+	GeminiModel     string
+	NineRouterHost  string
+	NineRouterModel string
+	NineRouterAPIKey string
+	// Caveman mode: true = terse/pendek, false = verbose/panjang
+	AICavemanMode bool
 
 	// Scraper
 	AntamURL             string
@@ -53,6 +58,11 @@ type Config struct {
 	CTAHeadline string
 	CTASubtext  string
 	CTAHandle   string
+
+	// Static Screenshot URLs (feature slides)
+	SlideHargaNotifURL   string
+	SlideStokAlertURL    string
+	SlideStokButikURL    string
 
 	// Cloudflare R2
 	R2AccountID    string
@@ -88,6 +98,7 @@ func Load() *Config {
 	useAsynq, _ := strconv.ParseBool(getEnv("USE_ASYNQ", "false"))
 	asynqConcurrency, _ := strconv.Atoi(getEnv("ASYNQ_CONCURRENCY", "10"))
 	asynqRetryMax, _ := strconv.Atoi(getEnv("ASYNQ_RETRY_MAX", "3"))
+	cavemanMode := getEnv("AI_CAVEMAN_MODE", "true") != "false"
 
 	return &Config{
 		MySQLHost:     getEnv("MYSQL_HOST", "mysql"),
@@ -106,11 +117,14 @@ func Load() *Config {
 		TelegramThreadGeneralID: threadGeneral,
 		TelegramThreadPostID:    threadPost,
 
-		AIProvider:   getEnv("AI_PROVIDER", "ollama"),
-		OllamaHost:   getEnv("OLLAMA_HOST", "http://ollama:11434"),
-		OllamaModel:  getEnv("OLLAMA_MODEL", "gemma4:31b-cloud"),
-		GeminiAPIKey: getEnv("GEMINI_API_KEY", ""),
-		GeminiModel:  getEnv("GEMINI_MODEL", "gemini-3.1-flash-lite-preview"),
+		AIProvider:       getEnv("AI_PROVIDER", "9router"),
+		OllamaHost:       getEnv("OLLAMA_HOST", "http://ollama:11434"),
+		OllamaModel:      getEnv("OLLAMA_MODEL", "gemma4:31b-cloud"),
+		GeminiAPIKey:     getEnv("GEMINI_API_KEY", ""),
+		GeminiModel:      getEnv("GEMINI_MODEL", "gemini-3.1-flash-lite-preview"),
+		NineRouterHost:   getEnv("9ROUTER_HOST", "http://host.docker.internal:20128/v1"),
+		NineRouterModel:  getEnv("9ROUTER_MODEL", "combo-deepseek-v4-flash"),
+		NineRouterAPIKey: getEnv("9ROUTER_API_KEY", ""),
 
 		AntamURL:             getEnv("ANTAM_URL", "https://www.logammulia.com/id/harga-emas-hari-ini"),
 		ScrapeTimeoutSeconds: scrapeTimeout,
@@ -127,6 +141,10 @@ func Load() *Config {
 		CTASubtext:  getEnv("CTA_SUBTEXT", "Update harga harian, tips & insight emas\nlangsung di tangan Anda."),
 		CTAHandle:   getEnv("CTA_HANDLE", "@dnarmasid"),
 
+		SlideHargaNotifURL: getEnv("SLIDE_HARGA_NOTIF_URL", ""),
+		SlideStokAlertURL:  getEnv("SLIDE_STOK_ALERT_URL", ""),
+		SlideStokButikURL:  getEnv("SLIDE_STOK_BUTIK_URL", ""),
+
 		R2AccountID:    getEnv("R2_ACCOUNT_ID", ""),
 		R2AccessKey:    getEnv("R2_ACCESS_KEY", ""),
 		R2SecretKey:    getEnv("R2_SECRET_KEY", ""),
@@ -142,6 +160,7 @@ func Load() *Config {
 		UseAsynq:         useAsynq,
 		AsynqConcurrency: asynqConcurrency,
 		AsynqRetryMax:    asynqRetryMax,
+		AICavemanMode:    cavemanMode,
 	}
 }
 

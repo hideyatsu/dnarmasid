@@ -60,6 +60,12 @@ func processEvent(client *repliz.Client, platforms []PlatformTarget, event model
 		return
 	}
 
+	// Guardrail: reject empty/invalid events (e.g. from scraper guardrail skip)
+	if event.Date == "" || event.PriceID == 0 {
+		log.Printf("[repliz-uploader] ⚠️ Invalid event (Date=%q, PriceID=%d). Skipping to prevent stale post.", event.Date, event.PriceID)
+		return
+	}
+
 	// Fallback caption
 	description := event.Caption
 	if description == "" {
@@ -110,9 +116,9 @@ Dapatkan update harga real-time dan alert otomatis lewat bot Telegram kami. Klik
 				IsDraft:       false,
 				Collaborators: []string{},
 				Music: repliz.Music{
-					ID:        "",
-					Artist:    "",
-					Name:      "",
+					ID:        "7637201849280711442",
+					Artist:    "DnarMasID",
+					Name:      "original sound - DnarMasID",
 					Thumbnail: "",
 				},
 				Products: []string{},
@@ -134,10 +140,11 @@ Dapatkan update harga real-time dan alert otomatis lewat bot Telegram kami. Klik
 	}
 }
 
-// buildAlbumMedias builds multi-image media array (TikTok carousel)
+// buildAlbumMedias builds multi-image media array (TikTok carousel — 7 slides)
 func buildAlbumMedias(event models.MediaGenerationCompletedEvent) []repliz.Media {
 	medias := make([]repliz.Media, 0)
 
+	// Slide 1: Infografis harga emas
 	if event.InfographicURL != "" {
 		medias = append(medias, repliz.Media{
 			Alt:             "Infografis Harga Emas",
@@ -148,21 +155,69 @@ func buildAlbumMedias(event models.MediaGenerationCompletedEvent) []repliz.Media
 		})
 	}
 
-	if event.ScreenshotPriceURL != "" {
+	// Slide 2: Hero screenshot (wrapped in phone mockup)
+	if event.HeroScreenshotSlideURL != "" {
 		medias = append(medias, repliz.Media{
-			Alt:       "Screenshot Harga Emas",
-			Type:      "image",
-			Thumbnail: event.ScreenshotPriceURL,
-			URL:       event.ScreenshotPriceURL,
+			Alt:             "Harga Emas Antam Hari Ini",
+			Type:            "image",
+			Thumbnail:       event.HeroScreenshotSlideURL,
+			URL:             event.HeroScreenshotSlideURL,
+			CustomThumbnail: false,
 		})
 	}
 
+	// Slide 3: Bridging fitur
+	if event.BridgingSlideURL != "" {
+		medias = append(medias, repliz.Media{
+			Alt:             "3 Fitur Utama Bot",
+			Type:            "image",
+			Thumbnail:       event.BridgingSlideURL,
+			URL:             event.BridgingSlideURL,
+			CustomThumbnail: false,
+		})
+	}
+
+	// Slide 4: Notifikasi harga emas
+	if event.FeatureHargaSlideURL != "" {
+		medias = append(medias, repliz.Media{
+			Alt:             "Notifikasi Harga Emas Otomatis",
+			Type:            "image",
+			Thumbnail:       event.FeatureHargaSlideURL,
+			URL:             event.FeatureHargaSlideURL,
+			CustomThumbnail: false,
+		})
+	}
+
+	// Slide 5: Notifikasi stok emas
+	if event.FeatureStokAlertSlideURL != "" {
+		medias = append(medias, repliz.Media{
+			Alt:             "Notifikasi Stok Emas Real-time",
+			Type:            "image",
+			Thumbnail:       event.FeatureStokAlertSlideURL,
+			URL:             event.FeatureStokAlertSlideURL,
+			CustomThumbnail: false,
+		})
+	}
+
+	// Slide 6: Info stok butik
+	if event.FeatureStokButikSlideURL != "" {
+		medias = append(medias, repliz.Media{
+			Alt:             "Info Stok Butik Antam",
+			Type:            "image",
+			Thumbnail:       event.FeatureStokButikSlideURL,
+			URL:             event.FeatureStokButikSlideURL,
+			CustomThumbnail: false,
+		})
+	}
+
+	// Slide 7: CTA penutup
 	if event.CTAImageURL != "" {
 		medias = append(medias, repliz.Media{
-			Alt:       "Call to Action - DnarMasID",
-			Type:      "image",
-			Thumbnail: event.CTAImageURL,
-			URL:       event.CTAImageURL,
+			Alt:             "Call to Action - DnarMasID",
+			Type:            "image",
+			Thumbnail:       event.CTAImageURL,
+			URL:             event.CTAImageURL,
+			CustomThumbnail: false,
 		})
 	}
 

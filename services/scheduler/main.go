@@ -41,12 +41,11 @@ func main() {
 
 	c := cron.New(cron.WithLocation(time.FixedZone("WIB", 7*60*60)))
 
-	// Trigger scrape pipeline sesuai jadwal .env (default: 08:00 WIB)
+	// Trigger scrape pipeline sesuai jadwal .env (default: 09:15 WIB)
 	_, err := c.AddFunc(cfg.ScheduleCron, func() {
 		log.Println("[scheduler] ⏰ Triggering daily scrape pipeline...")
 
 		if cfg.UseAsynq {
-			// Asynq mode: enqueue to Asynq only
 			payload, _ := tasks.NewScrapePayload("scheduler")
 			info, err := asynqClient.Enqueue(tasks.TypeScrape, payload,
 				asynq.Queue(tasks.QueueCritical),
@@ -58,7 +57,6 @@ func main() {
 			}
 			log.Printf("[scheduler] ✅ Asynq task enqueued: id=%s queue=%s", info.ID, info.Queue)
 		} else {
-			// Legacy mode: Redis List
 			if err := q.Publish(queue.KeyJobScrape, map[string]string{
 				"triggered_at": time.Now().Format(time.RFC3339),
 				"source":       "scheduler",
@@ -73,12 +71,42 @@ func main() {
 		log.Fatalf("[scheduler] Failed to add cron job: %v", err)
 	}
 
+	// Morning fallback (10:15) — catches late web updates
+	_, err = c.AddFunc("15 10 * * *", func() {
+		log.Println("[scheduler] ⏰ Triggering morning fallback scrape pipeline...")
+
+		if cfg.UseAsynq {
+			payload, _ := tasks.NewScrapePayload("scheduler-fallback-morning")
+			info, err := asynqClient.Enqueue(tasks.TypeScrape, payload,
+				asynq.Queue(tasks.QueueCritical),
+				asynq.MaxRetry(cfg.AsynqRetryMax),
+			)
+			if err != nil {
+				log.Printf("[scheduler] ❌ Asynq fallback enqueue failed: %v", err)
+				return
+			}
+			log.Printf("[scheduler] ✅ Asynq morning fallback enqueued: id=%s queue=%s", info.ID, info.Queue)
+		} else {
+			if err := q.Publish(queue.KeyJobScrape, map[string]string{
+				"triggered_at": time.Now().Format(time.RFC3339),
+				"source":       "scheduler",
+				"session":      "morning-fallback",
+			}); err != nil {
+				log.Printf("[scheduler] ❌ Failed to publish morning fallback: %v", err)
+				return
+			}
+			log.Println("[scheduler] ✅ morning fallback job.scrape published to Redis")
+		}
+	})
+	if err != nil {
+		log.Fatalf("[scheduler] Failed to add morning fallback cron job: %v", err)
+	}
+
 	// Trigger scrape pipeline sore hari (EVENING)
 	_, err = c.AddFunc(cfg.ScheduleCronEvening, func() {
 		log.Println("[scheduler] ⏰ Triggering evening scrape pipeline...")
 
 		if cfg.UseAsynq {
-			// Asynq mode: enqueue to Asynq only
 			payload, _ := tasks.NewScrapePayload("scheduler-evening")
 			info, err := asynqClient.Enqueue(tasks.TypeScrape, payload,
 				asynq.Queue(tasks.QueueCritical),
@@ -90,7 +118,6 @@ func main() {
 			}
 			log.Printf("[scheduler] ✅ Asynq evening task enqueued: id=%s queue=%s", info.ID, info.Queue)
 		} else {
-			// Legacy mode: Redis List
 			if err := q.Publish(queue.KeyJobScrape, map[string]string{
 				"triggered_at": time.Now().Format(time.RFC3339),
 				"source":       "scheduler",
@@ -106,8 +133,39 @@ func main() {
 		log.Fatalf("[scheduler] Failed to add evening cron job: %v", err)
 	}
 
+	// Evening fallback (19:15) — catches late web updates
+	_, err = c.AddFunc("15 19 * * *", func() {
+		log.Println("[scheduler] ⏰ Triggering evening fallback scrape pipeline...")
+
+		if cfg.UseAsynq {
+			payload, _ := tasks.NewScrapePayload("scheduler-fallback-evening")
+			info, err := asynqClient.Enqueue(tasks.TypeScrape, payload,
+				asynq.Queue(tasks.QueueCritical),
+				asynq.MaxRetry(cfg.AsynqRetryMax),
+			)
+			if err != nil {
+				log.Printf("[scheduler] ❌ Asynq fallback enqueue failed: %v", err)
+				return
+			}
+			log.Printf("[scheduler] ✅ Asynq evening fallback enqueued: id=%s queue=%s", info.ID, info.Queue)
+		} else {
+			if err := q.Publish(queue.KeyJobScrape, map[string]string{
+				"triggered_at": time.Now().Format(time.RFC3339),
+				"source":       "scheduler",
+				"session":      "evening-fallback",
+			}); err != nil {
+				log.Printf("[scheduler] ❌ Failed to publish evening fallback: %v", err)
+				return
+			}
+			log.Println("[scheduler] ✅ evening fallback job.scrape published to Redis")
+		}
+	})
+	if err != nil {
+		log.Fatalf("[scheduler] Failed to add evening fallback cron job: %v", err)
+	}
+
 	c.Start()
-	log.Printf("[scheduler] ✅ Running. Morning: %s | Evening: %s (WIB)", cfg.ScheduleCron, cfg.ScheduleCronEvening)
+	log.Printf("[scheduler] ✅ Running. Morning: %s → 10:15 | Evening: %s → 19:15 (WIB)", cfg.ScheduleCron, cfg.ScheduleCronEvening)
 	if cfg.UseAsynq {
 		log.Println("[scheduler] 📡 Mode: Asynq (asynq-worker required)")
 	} else {

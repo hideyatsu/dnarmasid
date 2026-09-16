@@ -6,25 +6,34 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"dnarmasid/shared/config"
 	"dnarmasid/shared/models"
 	"dnarmasid/shared/queue"
-	"time"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"gorm.io/gorm"
 )
 
 type CommandHandler struct {
-	cfg *config.Config
-	db  *gorm.DB
-	bot *tgbotapi.BotAPI
-	q   *queue.Client
+	cfg      *config.Config
+	db       *gorm.DB
+	bot      *tgbotapi.BotAPI
+	q        *queue.Client
+	pipeline *PipelineHandler
+	tracker  *ProgressTracker
 }
 
-func NewCommandHandler(cfg *config.Config, db *gorm.DB, bot *tgbotapi.BotAPI, q *queue.Client) *CommandHandler {
-	return &CommandHandler{cfg: cfg, db: db, bot: bot, q: q}
+func NewCommandHandler(cfg *config.Config, db *gorm.DB, bot *tgbotapi.BotAPI, q *queue.Client, tracker *ProgressTracker) *CommandHandler {
+	return &CommandHandler{
+		cfg:      cfg,
+		db:       db,
+		bot:      bot,
+		q:        q,
+		tracker:  tracker,
+		pipeline: NewPipelineHandler(cfg, db, bot, q, tracker),
+	}
 }
 
 // Listen mendengarkan update/command dari user Telegram
@@ -70,10 +79,14 @@ func (h *CommandHandler) handleMessage(msg *tgbotapi.Message) {
 		h.handleStatus(chatID)
 	case "help":
 		h.handleHelp(chatID)
+	case "admin":
+		h.handleAdmin(chatID)
 	case "scrape":
 		h.handleScrape(chatID)
 	case "threads":
 		h.handleThreads(chatID, msg.CommandArguments())
+	case "republish":
+		h.handleRepublish(chatID)
 	default:
 		if msg.IsCommand() {
 			h.send(chatID, "❓ Command tidak dikenal. Ketik /help untuk daftar command.")
@@ -155,11 +168,6 @@ func (h *CommandHandler) handleHelp(chatID int64) {
 		"/status — Cek status langganan\n" +
 		"/help — Tampilkan bantuan\n"
 
-	if chatID == h.cfg.TelegramAdminChatID {
-		text += "/scrape — [Admin] Trigger manual scrape\n" +
-			"/threads — [Admin] Review pending Threads content\n"
-	}
-
 	text += "\n📲 Follow kami: @DnarMasID"
 
 	msg := tgbotapi.NewMessage(chatID, text)
@@ -167,10 +175,32 @@ func (h *CommandHandler) handleHelp(chatID int64) {
 	h.bot.Send(msg)
 }
 
+func (h *CommandHandler) handleAdmin(chatID int64) {
+	if chatID != h.cfg.TelegramAdminChatID {
+		return // silent drop for non-admin
+	}
+
+	text := "⚙️ *Admin Panel — DnarMasID*\n\n" +
+		"*Scraper:*\n" +
+		"/scrape — Trigger manual scrape harga Antam\n\n" +
+		"*Threads:*\n" +
+		"/threads — List pending konten Threads\n" +
+		"/threads <nomor> — Preview full konten\n\n" +
+		"*Republish:*\n" +
+		"/republish — Republish full pipeline (AI → Media → Posting)\n"
+	h.send(chatID, text)
+}
+
+func (h *CommandHandler) handleRepublish(chatID int64) {
+	if chatID != h.cfg.TelegramAdminChatID {
+		return // silent drop for non-admin
+	}
+	h.pipeline.Handle(chatID, "republish")
+}
+
 func (h *CommandHandler) handleScrape(chatID int64) {
 	if chatID != h.cfg.TelegramAdminChatID {
-		h.send(chatID, "❌ Maaf, command ini hanya untuk Admin.")
-		return
+		return // silent drop for non-admin
 	}
 
 	h.send(chatID, "⏳ Memulai proses scraping Antam secara manual...")
@@ -188,18 +218,9 @@ func (h *CommandHandler) handleScrape(chatID int64) {
 	h.send(chatID, "✅ Job scraping berhasil dikirim ke antrean. Mohon tunggu notifikasi hasilnya.")
 }
 
-func (h *CommandHandler) send(chatID int64, text string) {
-	msg := tgbotapi.NewMessage(chatID, text)
-	msg.ParseMode = "Markdown"
-	if _, err := h.bot.Send(msg); err != nil {
-		log.Printf("[command-handler] ⚠️ send error: %v", err)
-	}
-}
-
 func (h *CommandHandler) handleThreads(chatID int64, args string) {
 	if chatID != h.cfg.TelegramAdminChatID {
-		h.send(chatID, "❌ Maaf, command ini hanya untuk Admin.")
-		return
+		return // silent drop for non-admin
 	}
 
 	// If args is a number, show detail
@@ -263,4 +284,12 @@ func (h *CommandHandler) handleThreadsDetail(chatID int64, num int) {
 	msg := tgbotapi.NewMessage(chatID, text)
 	msg.ParseMode = "Markdown"
 	h.bot.Send(msg)
+}
+
+func (h *CommandHandler) send(chatID int64, text string) {
+	msg := tgbotapi.NewMessage(chatID, text)
+	msg.ParseMode = "Markdown"
+	if _, err := h.bot.Send(msg); err != nil {
+		log.Printf("[command-handler] ⚠️ send error: %v", err)
+	}
 }

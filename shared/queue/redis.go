@@ -17,12 +17,13 @@ import (
 const (
 	KeyJobScrape                = "job.scrape"                 // scheduler → scraper
 	KeyGoldScrapedAI            = "gold.scraped.ai"            // scraper → ai-generator
-	KeyGoldScrapedMedia         = "gold.scraped.media"         // scraper → media-generator
-	KeyGoldScrapedBot           = "gold.scraped.telegram"      // scraper → telegram-bot
+	KeyGoldScrapedMedia         = "gold.scraped.media"         // scraper → media-generator (deprecated, use KeyGoldProcessed)
+	KeyGoldProcessed            = "gold.processed"             // ai-generator → media-generator (serial pipeline)
 	KeyContentReady             = "content.ready"              // ai-generator → telegram-bot
 	KeyMediaReady               = "media.ready"                // media-generator → telegram-bot
 	KeyScrapeFailed             = "scrape.failed"              // scraper → telegram-bot
 	KeyMediaGenerationCompleted = "media.generation.completed" // media-generator → repliz-uploader
+	KeyBotMediaDone             = "bot.media.done"             // media-generator → telegram-bot (republish progress, no competition)
 	KeyGoldScrapedThreads       = "gold.scraped.threads"       // scraper → ai-generator (threads)
 )
 

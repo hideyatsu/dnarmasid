@@ -44,6 +44,8 @@ func (g *ContentGenerator) GenerateThreads(event *models.GoldScrapedEvent) error
 	switch g.cfg.AIProvider {
 	case "gemini":
 		content, err = g.callGemini(prompt)
+	case "9router":
+		content, err = g.callNineRouter(prompt)
 	default:
 		content, err = g.callOllama(prompt)
 	}
@@ -79,18 +81,22 @@ func (g *ContentGenerator) buildThreadsPrompt(event *models.GoldScrapedEvent, tt
 		}
 	}
 
+	// Verbose mode override
+	styleInstr := "Max 2-3 relevant hashtags at the end. Tone: conversational, engaging, human.\nDO NOT start with \"Harga Emas\" or any template-like opening. Be creative and varied.\n"
+	if !g.cfg.AICavemanMode {
+		styleInstr = "Write a DETAILED post (4-7 sentences). Be thorough and educational in your explanation.\nMax 4-5 relevant hashtags. Tone: conversational, insightful, human — like a market analyst friend.\nDO NOT start with \"Harga Emas\" or any template-like opening. Be creative and varied.\n"
+	}
+
 	base := fmt.Sprintf(`You are a social media content writer for Threads (Meta's text platform).
 Write ONE post in INDONESIAN language. NO markdown formatting (no **bold**, no _italic_).
 NO external links or URLs in the post body. If mentioning a product/service, say "cek bio" instead.
-Max 2-3 relevant hashtags at the end. Tone: conversational, engaging, human.
-DO NOT start with "Harga Emas" or any template-like opening. Be creative and varied.
-
+%s
 DATA:
 Tanggal: %s
 Harga 1gr: Rp %s (%s Rp %s)
 Buyback 1gr: Rp %s
 Trend: %s
-`, event.Date, formatRupiah(p1g.BuyPrice), trendEmoji(event.Trend),
+`, styleInstr, event.Date, formatRupiah(p1g.BuyPrice), trendEmoji(event.Trend),
 		formatRupiah(event.ChangeAmt), formatRupiah(p1g.SellPrice), event.Trend)
 
 	switch tt {

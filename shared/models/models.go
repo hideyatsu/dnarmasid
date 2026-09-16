@@ -105,8 +105,10 @@ type ContentReadyEvent struct {
 type MediaType string
 
 const (
-	MediaTypeImage MediaType = "image"
-	MediaTypeVideo MediaType = "video"
+	MediaTypeImage           MediaType = "image"
+	MediaTypeVideo           MediaType = "video"
+	MediaTypeScreenshotPrice MediaType = "screenshot_price"
+	MediaTypeScreenshotBuyback MediaType = "screenshot_buyback"
 )
 
 type GeneratedMedia struct {
@@ -134,13 +136,18 @@ type MediaReadyEvent struct {
 
 // MediaGenerationCompletedEvent — payload Redis: media-generator → repliz-uploader
 type MediaGenerationCompletedEvent struct {
-	PriceID              uint   `json:"price_id"`
-	Date                 string `json:"date"`
-	Caption              string `json:"caption"`               // AI generated caption
-	InfographicURL       string `json:"infographic_url"`       // R2 link of the image
-	CTAImageURL          string `json:"cta_image_url"`         // R2 link of CTA slide
-	ScreenshotPriceURL   string `json:"screenshot_price_url"`  // R2 link of the screenshot
-	ScreenshotBuybackURL string `json:"screenshot_buyback_url"` // R2 link of buyback screenshot
+	PriceID                      uint   `json:"price_id"`
+	Date                         string `json:"date"`
+	Caption                      string `json:"caption"`                          // AI generated caption
+	InfographicURL               string `json:"infographic_url"`                  // Slide 1: infografis harga emas
+	CTAImageURL                  string `json:"cta_image_url"`                    // Slide 7: CTA penutup
+	ScreenshotPriceURL           string `json:"screenshot_price_url"`             // Raw screenshot dari scraper
+	ScreenshotBuybackURL         string `json:"screenshot_buyback_url"`           // Raw buyback screenshot
+	HeroScreenshotSlideURL       string `json:"hero_screenshot_slide_url"`        // Slide 2: hero price (wrapped in phone mockup)
+	BridgingSlideURL             string `json:"bridging_slide_url"`               // Slide 3: bridging fitur
+	FeatureHargaSlideURL         string `json:"feature_harga_slide_url"`          // Slide 4: notifikasi harga emas
+	FeatureStokAlertSlideURL     string `json:"feature_stok_alert_slide_url"`     // Slide 5: notifikasi stok emas
+	FeatureStokButikSlideURL     string `json:"feature_stok_butik_slide_url"`     // Slide 6: informasi stok emas
 }
 
 // ─────────────────────────────────────────

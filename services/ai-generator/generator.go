@@ -57,9 +57,11 @@ func (g *ContentGenerator) Generate(event *models.GoldScrapedEvent) (*models.Con
 	case "gemini":
 		content, err = g.callGemini(prompt)
 	case "ollama":
+		content, err = g.callOllama(prompt)
+	case "9router":
 		fallthrough
 	default:
-		content, err = g.callOllama(prompt)
+		content, err = g.callNineRouter(prompt)
 	}
 
 	if err != nil {
@@ -88,6 +90,10 @@ func (g *ContentGenerator) buildUnifiedPrompt(event *models.GoldScrapedEvent, p1
 	tEmoji := trendEmoji(event.Trend)
 	bbTEmoji := trendEmoji(event.BuybackTrend)
 
+	if !g.cfg.AICavemanMode {
+		return g.buildVerbosePrompt(event, p1g, spread, pct, tEmoji, bbTEmoji)
+	}
+
 	return fmt.Sprintf(`Generate an ENGAGING and EDUCATIONAL Instagram/Social Media caption about Antam gold prices in INDONESIAN language.
 
 CRITICAL INSTRUCTIONS:
@@ -110,13 +116,13 @@ Harga: Rp [Price] / gr ([Trend Triangle] Rp [Change Amount])
 Buyback: Rp [Buyback] / gr ([Trend Triangle] Rp [Change Amount])
 Spread: [Spread]
 
-Trend: [Provide a brief Indonesian market trend summary with emojis]
+Trend: [Bullish/Bearish/Sideways] — [Brief reason in 1 sentence with emoji]
 
-[Provide 2-3 sentences of INSIGHT/ANALYSIS in INDONESIAN about whether it is a good time to buy/sell based on the data above]
+[2-3 sentences of INSIGHT: market factors, investor sentiment, practical advice]
 
-[Create a creative and persuasive Call to Action in INDONESIAN, encouraging users to use our Telegram bot for real-time updates and price alerts by clicking the link in bio]
+[Short CTA: encourage users to follow/check bio for real-time updates]
 
-[Add maximum 5 relevant hashtags in Indonesian]
+[Maximum 5 relevant hashtags in Indonesian]
 
 Tone: Professional, persuasive, and easy to understand.`,
 		event.Date,
@@ -125,24 +131,72 @@ Tone: Professional, persuasive, and easy to understand.`,
 		formatRupiah(spread), pct, event.Trend, tEmoji)
 }
 
-func (g *ContentGenerator) fallbackUnifiedContent(event *models.GoldScrapedEvent, p1g models.GoldPrice, spread int64, pct float64) string {
-	tEmoji := trendEmoji(event.Trend)
-	return fmt.Sprintf(`Harga Emas Antam Hari Ini
+// buildVerbosePrompt — long-form caption when AI_CAVEMAN_MODE=false
+func (g *ContentGenerator) buildVerbosePrompt(event *models.GoldScrapedEvent, p1g models.GoldPrice, spread int64, pct float64, tEmoji, bbTEmoji string) string {
+	return fmt.Sprintf(`Generate an ENGAGING, DETAILED, and EDUCATIONAL Instagram/Social Media caption about Antam gold prices in INDONESIAN language.
 
-Tanggal: %s
-Harga: Rp %s / gr (%s)
-Buyback: Rp %s / gr
+CRITICAL INSTRUCTIONS:
+1. Use INDONESIAN language for the entire output.
+2. DO NOT use any Markdown formatting (no bold **, no italics _, no separators ***). Use plain text only.
+3. Caption MUST be LONG and COMPREHENSIVE — minimum 200 characters, maximum 500 characters.
+4. Do NOT use short sentences. Elaborate each point with context and explanation.
+
+DATA:
+Date: %s
+Price: Rp %s / gr (%s Rp %s)
+Buyback: Rp %s / gr (%s Rp %s)
 Spread: Rp %s (%.2f%%)
 Trend: %s %s
 
+MANDATORY TEMPLATE (Must be in INDONESIAN, strictly no bold):
+Harga Emas Antam Hari Ini
+
+Tanggal: [Date]
+Harga: Rp [Price] / gr ([Trend Triangle] Rp [Change Amount])
+Buyback: Rp [Buyback] / gr ([Trend Triangle] Rp [Change Amount])
+Spread: [Spread with explanation]
+
+Trend: [Bullish/Bearish/Sideways] — [Brief reason with multiple emojis]
+
+[Provide 4-6 sentences of DEEP ANALYSIS in INDONESIAN:
+- Why is the price moving this way? (global factors, USD, geopolitik, supply/demand)
+- What does this mean for different types of investors (short-term vs long-term)?
+- Historical context: how does today compare to recent trends?
+- Practical advice: is this a good time to buy, sell, or hold?]
+
+[Short CTA with specific benefits: notifikasi instan, alert harga, rekomendasi signal — encourage users to check bio]
+
+[Add 5-7 relevant hashtags in Indonesian]
+
+Tone: Professional, educational, insightful, and easy to understand.
+Output style: Rich, detailed, elaborated — like a market analyst sharing knowledge.`,
+		event.Date,
+		formatRupiah(p1g.BuyPrice), tEmoji, formatRupiah(event.ChangeAmt),
+		formatRupiah(p1g.SellPrice), bbTEmoji, formatRupiah(event.BuybackChangeAmt),
+		formatRupiah(spread), pct, event.Trend, tEmoji)
+}
+
+func (g *ContentGenerator) fallbackUnifiedContent(event *models.GoldScrapedEvent, p1g models.GoldPrice, spread int64, pct float64) string {
+	tEmoji := trendEmoji(event.Trend)
+	bbTEmoji := trendEmoji(event.BuybackTrend)
+	trendType := mapTrendType(event.Trend)
+	return fmt.Sprintf(`Harga Emas Antam Hari Ini
+
+Tanggal: %s
+Harga: Rp %s / gr (%s Rp %s)
+Buyback: Rp %s / gr (%s Rp %s)
+Spread: Rp %s (%.2f%%)
+
+Trend: %s — Harga %s dari kemarin, tekanan beli meningkat di tengah ketidakpastian global 📈
+
 Harga emas hari ini menunjukkan pergerakan %s. Pantau terus untuk mendapatkan harga terbaik.
 
-Butuh update harga real-time?
-Klik link di bio untuk menggunakan bot kami dan pasang Alert Harga agar tidak ketinggalan momentum pasar.
+Follow buat update harga real-time setiap hari!
 
-#HargaEmas #Antam #DnarMasID #AntamLogamMulia #HargaEmasHariIni`,
-		event.Date, formatRupiah(p1g.BuyPrice), formatChange(event.ChangeAmt, event.ChangePct, event.Trend),
-		formatRupiah(p1g.SellPrice), formatRupiah(spread), pct, event.Trend, tEmoji, event.Trend)
+#EmasAntam #HargaEmas #InvestasiEmas #DnarMasID #LogamMulia`,
+		event.Date, formatRupiah(p1g.BuyPrice), tEmoji, formatRupiah(event.ChangeAmt),
+		formatRupiah(p1g.SellPrice), bbTEmoji, formatRupiah(event.BuybackChangeAmt),
+		formatRupiah(spread), pct, trendType, event.Trend, event.Trend)
 }
 
 // callOllama calls the local Ollama API for generating content
@@ -249,6 +303,67 @@ func (g *ContentGenerator) callGemini(prompt string) (string, error) {
 	return result.Candidates[0].Content.Parts[0].Text, nil
 }
 
+// callNineRouter calls the local 9router API (OpenAI-compatible)
+func (g *ContentGenerator) callNineRouter(prompt string) (string, error) {
+	url := strings.TrimRight(g.cfg.NineRouterHost, "/") + "/chat/completions"
+
+	reqBody := map[string]any{
+		"model": g.cfg.NineRouterModel,
+		"messages": []any{
+			map[string]string{
+				"role":    "user",
+				"content": prompt,
+			},
+		},
+		"temperature": 0.7,
+		"max_tokens":  1024,
+		"stream":      false,
+	}
+
+	body, _ := json.Marshal(reqBody)
+
+	req, err := http.NewRequest("POST", url, bytes.NewReader(body))
+	if err != nil {
+		return "", fmt.Errorf("create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	if g.cfg.NineRouterAPIKey != "" {
+		req.Header.Set("Authorization", "Bearer "+g.cfg.NineRouterAPIKey)
+	}
+
+	client := &http.Client{Timeout: 120 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("9router request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, _ := io.ReadAll(resp.Body)
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("9router api error (status %d): %s", resp.StatusCode, string(respBody))
+	}
+
+	var result struct {
+		Choices []struct {
+			Message struct {
+				Content string `json:"content"`
+			} `json:"message"`
+		} `json:"choices"`
+	}
+
+	if err := json.Unmarshal(respBody, &result); err != nil {
+		return "", fmt.Errorf("unmarshal error: %w", err)
+	}
+
+	if len(result.Choices) == 0 || result.Choices[0].Message.Content == "" {
+		return "", fmt.Errorf("empty response from 9router")
+	}
+
+	return result.Choices[0].Message.Content, nil
+}
+
 // ─────────────────────────────────────────
 // Fallback content jika API gagal
 // ─────────────────────────────────────────
@@ -313,5 +428,16 @@ func trendEmoji(trend string) string {
 		return "▼"
 	default:
 		return "▬"
+	}
+}
+
+func mapTrendType(trend string) string {
+	switch strings.ToLower(trend) {
+	case "up", "naik":
+		return "Bullish"
+	case "down", "turun":
+		return "Bearish"
+	default:
+		return "Sideways"
 	}
 }

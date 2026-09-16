@@ -36,8 +36,8 @@ func NewAntamScraper(cfg *config.Config, db *gorm.DB, storage storage.StorageSer
 	return &AntamScraper{cfg: cfg, db: db, storage: storage, chrome: chromeManager}
 }
 
-// Run menjalankan scraping dan return GoldScrapedEvent
-func (s *AntamScraper) Run(forceDummy bool) (*models.GoldScrapedEvent, error) {
+// Run menjalankan scraping dan return GoldScrapedEvent, price 1g, dan error
+func (s *AntamScraper) Run(forceDummy bool) (*models.GoldScrapedEvent, int64, error) {
 	if forceDummy {
 		return s.runDummy()
 	}
@@ -65,19 +65,28 @@ func (s *AntamScraper) Run(forceDummy bool) (*models.GoldScrapedEvent, error) {
 	}
 
 	if err != nil {
-		return nil, fmt.Errorf("scrape error: %w", err)
+		return nil, 0, fmt.Errorf("scrape error: %w", err)
 	}
 	if len(prices) == 0 {
-		return nil, fmt.Errorf("no prices found")
+		return nil, 0, fmt.Errorf("no prices found")
 	}
 
 	// 2. Cek apakah update time sudah ada di DB (untuk gram 1)
 	// Kita cek record terbaru berdasarkan source_update_time
 	var latestRecord models.GoldPrice
 	result := s.db.Where("gram = 1").Order("source_update_time desc").First(&latestRecord)
+	if result.Error != nil && result.Error != gorm.ErrRecordNotFound {
+		// Fail-closed: DB error, skip scrape to prevent stale broadcast
+		log.Printf("[scraper] ❌ Guardrail DB check failed: %v — skipping scrape to prevent stale broadcast", result.Error)
+		return nil, 0, fmt.Errorf("guardrail check failed: %w", result.Error)
+	}
 	if result.Error == nil && latestRecord.SourceUpdateTime != nil && latestRecord.SourceUpdateTime.Equal(updateTime) {
 		log.Printf("[scraper] ℹ️ Waktu update sama (%v). Skip pipeline.", updateTime.Format("02 Jan 2006 15:04:05"))
-		return nil, fmt.Errorf("no update since last scrape")
+		p1g := extractPrice1g(prices)
+		if p1g == 0 && result.Error == nil {
+			p1g = latestRecord.BuyPrice
+		}
+		return nil, p1g, nil
 	}
 
 	parsedDate := updateTime.Truncate(24 * time.Hour)
@@ -114,11 +123,41 @@ func (s *AntamScraper) Run(forceDummy bool) (*models.GoldScrapedEvent, error) {
 
 	if !didChange {
 		log.Printf("[scraper] ℹ️ Tidak ada perubahan data. Skip pipeline.")
-		return nil, fmt.Errorf("no change in price")
+		p1g := extractPrice1g(prices)
+		if p1g == 0 && result.Error == nil {
+			p1g = latestRecord.BuyPrice
+		}
+		return nil, p1g, nil
 	}
 
 	// 4. Hitung perubahan vs kemarin (gram 1)
 	changePct, changeAmt, trend, bbChangeAmt, bbTrend := s.calcChange(parsedDate, prices)
+
+	// 5. Simpan screenshot ke generated_media (agar bisa di-query saat republish)
+	// Cari price_id gram 1.0 sebagai acuan utama pipeline
+	var priceID uint
+	for _, p := range prices {
+		if p.Gram == 1.0 {
+			priceID = p.ID
+			break
+		}
+	}
+	if priceID == 0 {
+		priceID = prices[0].ID // fallback: gunakan gram terendah jika 1.0 tidak ada
+	}
+	
+	dateStr := parsedDate.Format("02 Jan 2006")
+	dateStr = strings.ReplaceAll(dateStr, "May", "Mei")
+	dateStr = strings.ReplaceAll(dateStr, "Aug", "Agt")
+	dateStr = strings.ReplaceAll(dateStr, "Oct", "Okt")
+	dateStr = strings.ReplaceAll(dateStr, "Dec", "Des")
+
+	if screenshotPrice != "" {
+		s.saveScreenshotToDB(priceID, models.MediaTypeScreenshotPrice, "raw_screenshot_price_"+dateStr+".jpg", screenshotPrice)
+	}
+	if screenshotBuyback != "" {
+		s.saveScreenshotToDB(priceID, models.MediaTypeScreenshotBuyback, "raw_screenshot_buyback_"+dateStr+".jpg", screenshotBuyback)
+	}
 
 	updateTimeStr := updateTime.Format("02 Jan 2006 15:04:05")
 	updateTimeStr = strings.ReplaceAll(updateTimeStr, "May", "Mei")
@@ -126,16 +165,10 @@ func (s *AntamScraper) Run(forceDummy bool) (*models.GoldScrapedEvent, error) {
 	updateTimeStr = strings.ReplaceAll(updateTimeStr, "Oct", "Okt")
 	updateTimeStr = strings.ReplaceAll(updateTimeStr, "Dec", "Des")
 
-	dateStr := parsedDate.Format("02 Jan 2006")
-	dateStr = strings.ReplaceAll(dateStr, "May", "Mei")
-	dateStr = strings.ReplaceAll(dateStr, "Aug", "Agt")
-	dateStr = strings.ReplaceAll(dateStr, "Oct", "Okt")
-	dateStr = strings.ReplaceAll(dateStr, "Dec", "Des")
-
 	event := &models.GoldScrapedEvent{
 		Date:                 dateStr,
 		UpdateTime:           updateTimeStr,
-		PriceID:              prices[0].ID,
+		PriceID:              priceID,
 		Prices:               prices,
 		ChangePct:            changePct,
 		ChangeAmt:            changeAmt,
@@ -146,10 +179,14 @@ func (s *AntamScraper) Run(forceDummy bool) (*models.GoldScrapedEvent, error) {
 		ScreenshotBuybackURL: screenshotBuyback,
 	}
 
-	return event, nil
+	p1g := extractPrice1g(prices)
+	if p1g == 0 && result.Error == nil {
+		p1g = latestRecord.BuyPrice
+	}
+	return event, p1g, nil
 }
 
-func (s *AntamScraper) runDummy() (*models.GoldScrapedEvent, error) {
+func (s *AntamScraper) runDummy() (*models.GoldScrapedEvent, int64, error) {
 	log.Println("[scraper] 🧪 Running in FORCE DUMMY mode")
 	loc, _ := time.LoadLocation("Asia/Jakarta")
 	today := time.Now().In(loc).Truncate(24 * time.Hour)
@@ -182,7 +219,17 @@ func (s *AntamScraper) runDummy() (*models.GoldScrapedEvent, error) {
 		ScreenshotBuybackURL: "https://r2.dnarmas.id/dummy_buyback.png",
 	}
 
-	return event, nil
+	p1g := extractPrice1g(prices)
+	return event, p1g, nil
+}
+
+func extractPrice1g(prices []models.GoldPrice) int64 {
+	for _, p := range prices {
+		if p.Gram == 1.0 {
+			return p.BuyPrice
+		}
+	}
+	return 0
 }
 
 func (s *AntamScraper) scrapeWithAPI() (time.Time, []models.GoldPrice, string, string, error) {
@@ -706,6 +753,38 @@ func (s *AntamScraper) saveDebugFile(filename string, data []byte) string {
 		}
 	}
 	return ""
+}
+
+// saveScreenshotToDB menyimpan URL screenshot ke generated_media agar bisa di-query saat republish
+func (s *AntamScraper) saveScreenshotToDB(priceID uint, mediaType models.MediaType, filename, publicURL string) {
+	// Upsert: update jika sudah ada (idempotent) — diperketat dengan media_type
+	var existing models.GeneratedMedia
+	result := s.db.Where("price_id = ? AND media_type = ? AND file_name = ?", priceID, mediaType, filename).First(&existing)
+	
+	if result.Error == gorm.ErrRecordNotFound {
+		// INSERT baru
+		media := models.GeneratedMedia{
+			PriceID:   priceID,
+			MediaType: mediaType,
+			FileName:  filename,
+			PublicURL: publicURL,
+			Status:    "pending",
+		}
+		if err := s.db.Create(&media).Error; err != nil {
+			log.Printf("[scraper] ❌ Failed to save screenshot %s to DB: %v", filename, err)
+		} else {
+			log.Printf("[scraper] 💾 Screenshot saved to DB: %s", filename)
+		}
+	} else if result.Error == nil {
+		// UPDATE existing
+		existing.PublicURL = publicURL
+		existing.Status = "pending"
+		if err := s.db.Save(&existing).Error; err != nil {
+			log.Printf("[scraper] ❌ Failed to update screenshot %s in DB: %v", filename, err)
+		} else {
+			log.Printf("[scraper] 💾 Screenshot updated in DB: %s", filename)
+		}
+	}
 }
 
 func stripTags(s string) string {
