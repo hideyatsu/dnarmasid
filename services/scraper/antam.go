@@ -36,8 +36,8 @@ func NewAntamScraper(cfg *config.Config, db *gorm.DB, storage storage.StorageSer
 	return &AntamScraper{cfg: cfg, db: db, storage: storage, chrome: chromeManager}
 }
 
-// Run menjalankan scraping dan return GoldScrapedEvent
-func (s *AntamScraper) Run(forceDummy bool) (*models.GoldScrapedEvent, error) {
+// Run menjalankan scraping dan return GoldScrapedEvent, price 1g, dan error
+func (s *AntamScraper) Run(forceDummy bool) (*models.GoldScrapedEvent, int64, error) {
 	if forceDummy {
 		return s.runDummy()
 	}
@@ -65,10 +65,10 @@ func (s *AntamScraper) Run(forceDummy bool) (*models.GoldScrapedEvent, error) {
 	}
 
 	if err != nil {
-		return nil, fmt.Errorf("scrape error: %w", err)
+		return nil, 0, fmt.Errorf("scrape error: %w", err)
 	}
 	if len(prices) == 0 {
-		return nil, fmt.Errorf("no prices found")
+		return nil, 0, fmt.Errorf("no prices found")
 	}
 
 	// 2. Cek apakah update time sudah ada di DB (untuk gram 1)
@@ -78,11 +78,15 @@ func (s *AntamScraper) Run(forceDummy bool) (*models.GoldScrapedEvent, error) {
 	if result.Error != nil && result.Error != gorm.ErrRecordNotFound {
 		// Fail-closed: DB error, skip scrape to prevent stale broadcast
 		log.Printf("[scraper] ❌ Guardrail DB check failed: %v — skipping scrape to prevent stale broadcast", result.Error)
-		return nil, fmt.Errorf("guardrail check failed: %w", result.Error)
+		return nil, 0, fmt.Errorf("guardrail check failed: %w", result.Error)
 	}
 	if result.Error == nil && latestRecord.SourceUpdateTime != nil && latestRecord.SourceUpdateTime.Equal(updateTime) {
 		log.Printf("[scraper] ℹ️ Waktu update sama (%v). Skip pipeline.", updateTime.Format("02 Jan 2006 15:04:05"))
-		return nil, nil
+		p1g := extractPrice1g(prices)
+		if p1g == 0 && result.Error == nil {
+			p1g = latestRecord.BuyPrice
+		}
+		return nil, p1g, nil
 	}
 
 	parsedDate := updateTime.Truncate(24 * time.Hour)
@@ -119,7 +123,11 @@ func (s *AntamScraper) Run(forceDummy bool) (*models.GoldScrapedEvent, error) {
 
 	if !didChange {
 		log.Printf("[scraper] ℹ️ Tidak ada perubahan data. Skip pipeline.")
-		return nil, nil
+		p1g := extractPrice1g(prices)
+		if p1g == 0 && result.Error == nil {
+			p1g = latestRecord.BuyPrice
+		}
+		return nil, p1g, nil
 	}
 
 	// 4. Hitung perubahan vs kemarin (gram 1)
@@ -171,10 +179,14 @@ func (s *AntamScraper) Run(forceDummy bool) (*models.GoldScrapedEvent, error) {
 		ScreenshotBuybackURL: screenshotBuyback,
 	}
 
-	return event, nil
+	p1g := extractPrice1g(prices)
+	if p1g == 0 && result.Error == nil {
+		p1g = latestRecord.BuyPrice
+	}
+	return event, p1g, nil
 }
 
-func (s *AntamScraper) runDummy() (*models.GoldScrapedEvent, error) {
+func (s *AntamScraper) runDummy() (*models.GoldScrapedEvent, int64, error) {
 	log.Println("[scraper] 🧪 Running in FORCE DUMMY mode")
 	loc, _ := time.LoadLocation("Asia/Jakarta")
 	today := time.Now().In(loc).Truncate(24 * time.Hour)
@@ -207,7 +219,17 @@ func (s *AntamScraper) runDummy() (*models.GoldScrapedEvent, error) {
 		ScreenshotBuybackURL: "https://r2.dnarmas.id/dummy_buyback.png",
 	}
 
-	return event, nil
+	p1g := extractPrice1g(prices)
+	return event, p1g, nil
+}
+
+func extractPrice1g(prices []models.GoldPrice) int64 {
+	for _, p := range prices {
+		if p.Gram == 1.0 {
+			return p.BuyPrice
+		}
+	}
+	return 0
 }
 
 func (s *AntamScraper) scrapeWithAPI() (time.Time, []models.GoldPrice, string, string, error) {
