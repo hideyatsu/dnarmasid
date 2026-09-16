@@ -272,7 +272,7 @@ func sendHtNotification(text string) {
 		}
 		notifyToken := os.Getenv("NOTIFY_TOKEN")
 		if notifyToken == "" {
-			notifyToken = "ht_secret_notify_gateway_2026_prod"
+			notifyToken = "ht_sec_59b5ddf0fa1e60346f4d60c8fc2ead55c4e1afd67b30f56b"
 		}
 
 		payload := map[string]string{
