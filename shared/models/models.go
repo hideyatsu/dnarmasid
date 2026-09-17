@@ -150,6 +150,21 @@ type MediaGenerationCompletedEvent struct {
 	FeatureStokButikSlideURL     string `json:"feature_stok_butik_slide_url"`     // Slide 6: informasi stok emas
 }
 
+// VideoShortDoneEvent — payload Redis: video-short-generator → telegram-bot
+type VideoShortDoneEvent struct {
+	PriceID      uint   `json:"price_id"`
+	Date         string `json:"date"`
+	PublicURL    string `json:"public_url"`
+	Condition    int    `json:"condition"`
+	ConditionLbl string `json:"condition_label"`
+	HookVisual   string `json:"hook_visual"`
+	HargaJual    int64  `json:"harga_jual"`
+	HargaBuyback int64  `json:"harga_buyback"`
+	SpreadPct    float64 `json:"spread_pct"`
+	DurationSec  float64 `json:"duration_sec"`
+	Error        string `json:"error,omitempty"` // non-empty jika gagal
+}
+
 // ─────────────────────────────────────────
 // Subscriber — user Telegram
 // ─────────────────────────────────────────

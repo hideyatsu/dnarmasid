@@ -22,10 +22,13 @@ type RepublishSession struct {
 	MessageID    int
 	PriceID      uint
 	Date         string
-	Steps        []ProgressStep
+	StepsA       []ProgressStep // Pipeline Infografis: Fetch Data → AI Caption → Media Render → Repliz Upload
+	StepsB       []ProgressStep // Pipeline Video Short: AI Caption → Video Short
 	StartedAt    time.Time
 	LastUpdateAt time.Time // updated setiap ada progress change
 	FailedAt     *time.Time
+	GroupADone   bool // true once group A reaches completion
+	GroupBDone   bool // true once group B reaches completion
 }
 
 // ProgressTracker tracks all active republish sessions (thread-safe)
@@ -43,8 +46,8 @@ func NewProgressTracker(bot *tgbotapi.BotAPI) *ProgressTracker {
 	}
 }
 
-// StartSession registers a new republish session with initial steps
-func (t *ProgressTracker) StartSession(chatID int64, messageID int, priceID uint, date string, initialSteps []ProgressStep) {
+// StartSession registers a new republish session with initial steps for both pipelines
+func (t *ProgressTracker) StartSession(chatID int64, messageID int, priceID uint, date string, stepsA []ProgressStep, stepsB []ProgressStep) {
 	t.Lock()
 	defer t.Unlock()
 
@@ -56,11 +59,13 @@ func (t *ProgressTracker) StartSession(chatID int64, messageID int, priceID uint
 		Date:         date,
 		StartedAt:    now,
 		LastUpdateAt: now,
-		Steps:        initialSteps,
+		StepsA:       stepsA,
+		StepsB:       stepsB,
 	}
 }
 
-// UpdateStep updates a step's status and returns the session (nil if not found)
+// UpdateStep updates a step's status in BOTH groups (for shared steps like AI Caption)
+// Returns the session (nil if not found)
 func (t *ProgressTracker) UpdateStep(priceID uint, stepName string, status string, detail string) *RepublishSession {
 	t.Lock()
 	defer t.Unlock()
@@ -70,21 +75,33 @@ func (t *ProgressTracker) UpdateStep(priceID uint, stepName string, status strin
 		return nil
 	}
 
-	for i, s := range sess.Steps {
+	// Update in group A
+	for i, s := range sess.StepsA {
 		if s.Name == stepName {
-			sess.Steps[i].Status = status
+			sess.StepsA[i].Status = status
 			if detail != "" {
-				sess.Steps[i].Detail = detail
+				sess.StepsA[i].Detail = detail
 			}
-			sess.LastUpdateAt = time.Now()
 			break
 		}
 	}
 
+	// Update in group B (shared steps like AI Caption)
+	for i, s := range sess.StepsB {
+		if s.Name == stepName {
+			sess.StepsB[i].Status = status
+			if detail != "" {
+				sess.StepsB[i].Detail = detail
+			}
+			break
+		}
+	}
+
+	sess.LastUpdateAt = time.Now()
 	return sess
 }
 
-// MarkFailed marks all pending/processing steps as failed
+// MarkFailed marks all pending/processing steps as failed in both groups
 func (t *ProgressTracker) MarkFailed(priceID uint, reason string) *RepublishSession {
 	t.Lock()
 	defer t.Unlock()
@@ -97,11 +114,19 @@ func (t *ProgressTracker) MarkFailed(priceID uint, reason string) *RepublishSess
 	now := time.Now()
 	sess.FailedAt = &now
 
-	for i := range sess.Steps {
-		if sess.Steps[i].Status != "done" {
-			sess.Steps[i].Status = "error"
-			if sess.Steps[i].Detail == "" {
-				sess.Steps[i].Detail = reason
+	for i := range sess.StepsA {
+		if sess.StepsA[i].Status != "done" {
+			sess.StepsA[i].Status = "error"
+			if sess.StepsA[i].Detail == "" {
+				sess.StepsA[i].Detail = reason
+			}
+		}
+	}
+	for i := range sess.StepsB {
+		if sess.StepsB[i].Status != "done" {
+			sess.StepsB[i].Status = "error"
+			if sess.StepsB[i].Detail == "" {
+				sess.StepsB[i].Detail = reason
 			}
 		}
 	}
@@ -121,6 +146,45 @@ func (t *ProgressTracker) RemoveSession(priceID uint) {
 	t.Lock()
 	defer t.Unlock()
 	delete(t.sessions, priceID)
+}
+
+// CheckGroupADone returns true if all steps in group A are done
+func (t *ProgressTracker) CheckGroupADone(priceID uint) bool {
+	t.RLock()
+	defer t.RUnlock()
+
+	sess, ok := t.sessions[priceID]
+	if !ok {
+		return false
+	}
+	for _, s := range sess.StepsA {
+		if s.Status != "done" {
+			return false
+		}
+	}
+	return true
+}
+
+// CheckGroupBDone returns true if all steps in group B are done
+func (t *ProgressTracker) CheckGroupBDone(priceID uint) bool {
+	t.RLock()
+	defer t.RUnlock()
+
+	sess, ok := t.sessions[priceID]
+	if !ok {
+		return false
+	}
+	for _, s := range sess.StepsB {
+		if s.Status != "done" {
+			return false
+		}
+	}
+	return true
+}
+
+// AllDone returns true if both groups are complete
+func (t *ProgressTracker) AllDone(priceID uint) bool {
+	return t.CheckGroupADone(priceID) && t.CheckGroupBDone(priceID)
 }
 
 // GetStaleSessions returns sessions older than timeout (for failure detection)
@@ -167,16 +231,12 @@ func (t *ProgressTracker) SendToAdmin(chatID int64, text string) {
 	}
 }
 
-// RenderProgress generates the progress message text
-func RenderProgress(sess *RepublishSession) string {
-	if sess == nil {
-		return ""
-	}
-
-	total := len(sess.Steps)
+// renderGroup renders a single pipeline group section
+func renderGroup(title string, emoji string, steps []ProgressStep) string {
+	total := len(steps)
 	done := 0
 	hasError := false
-	for _, s := range sess.Steps {
+	for _, s := range steps {
 		if s.Status == "done" {
 			done++
 		}
@@ -185,29 +245,21 @@ func RenderProgress(sess *RepublishSession) string {
 		}
 	}
 
-	// Build progress bar using Unicode (compact visual)
+	// Progress bar
 	bar := ""
-	for i := 0; i < total; i++ {
-		if sess.Steps[i].Status == "done" {
+	for _, s := range steps {
+		if s.Status == "done" {
 			bar += "■"
-		} else if sess.Steps[i].Status == "error" {
+		} else if s.Status == "error" {
 			bar += "■"
 		} else {
 			bar += "□"
 		}
 	}
 
-	// Header
-	var result string
-	if hasError {
-		result = fmt.Sprintf("🔄 *Republish Progress — %s*\n\n🔴 *Pipeline Gagal!*\n", sess.Date)
-	} else {
-		result = fmt.Sprintf("🔄 *Republish Progress — %s*\n\n", sess.Date)
-	}
-	result += fmt.Sprintf("`%s` %d/%d\n\n", bar, done, total)
+	result := fmt.Sprintf("%s *%s*\n`%s` %d/%d\n", emoji, title, bar, done, total)
 
-	// Steps
-	for _, s := range sess.Steps {
+	for _, s := range steps {
 		var icon string
 		switch s.Status {
 		case "done":
@@ -228,15 +280,32 @@ func RenderProgress(sess *RepublishSession) string {
 		result += fmt.Sprintf("%s %s%s\n", icon, s.Name, detail)
 	}
 
-	// Footer
+	// Group status footer
 	if hasError {
-		result += "\n🔴 Sebagian langkah gagal. Periksa log untuk detail."
+		result += "🔴 Gagal\n"
 	} else if done == total {
-		elapsed := time.Since(sess.StartedAt)
-		result += fmt.Sprintf("\n✅ *Pipeline selesai dalam %.0fs*", elapsed.Seconds())
+		result += "✅ Selesai\n"
 	} else {
-		result += "\n⏳ Menunggu..."
+		result += "⏳ Berjalan...\n"
 	}
+
+	return result
+}
+
+// RenderProgress generates the progress message text with two parallel pipeline groups
+func RenderProgress(sess *RepublishSession) string {
+	if sess == nil {
+		return ""
+	}
+
+	elapsed := time.Since(sess.StartedAt)
+	result := fmt.Sprintf("🔄 *Republish Progress — %s*\n⏱️ %.0fs\n\n", sess.Date, elapsed.Seconds())
+
+	// Group A: Pipeline Infografis
+	result += renderGroup("Pipeline Infografis", "📊", sess.StepsA)
+	result += "\n"
+	// Group B: Pipeline Video Short
+	result += renderGroup("Pipeline Video Short", "🎬", sess.StepsB)
 
 	return result
 }
