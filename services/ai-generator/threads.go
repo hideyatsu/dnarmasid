@@ -87,6 +87,9 @@ func (g *ContentGenerator) buildThreadsPrompt(event *models.GoldScrapedEvent, tt
 		styleInstr = "Write a DETAILED post (4-7 sentences). Be thorough and educational in your explanation.\nMax 4-5 relevant hashtags. Tone: conversational, insightful, human — like a market analyst friend.\nDO NOT start with \"Harga Emas\" or any template-like opening. Be creative and varied.\n"
 	}
 
+	spread := p1g.BuyPrice - p1g.SellPrice
+	spreadPct := float64(spread) / float64(p1g.BuyPrice) * 100
+
 	base := fmt.Sprintf(`You are a social media content writer for Threads (Meta's text platform).
 Write ONE post in INDONESIAN language. NO markdown formatting (no **bold**, no _italic_).
 NO external links or URLs in the post body. If mentioning a product/service, say "cek bio" instead.
@@ -94,18 +97,38 @@ NO external links or URLs in the post body. If mentioning a product/service, say
 DATA:
 Tanggal: %s
 Harga 1gr: Rp %s (%s Rp %s)
-Buyback 1gr: Rp %s
+Buyback 1gr: Rp %s (%s Rp %s)
+Spread: Rp %s (%.2f%%)
 Trend: %s
 `, styleInstr, event.Date, formatRupiah(p1g.BuyPrice), trendEmoji(event.Trend),
-		formatRupiah(event.ChangeAmt), formatRupiah(p1g.SellPrice), event.Trend)
+		formatRupiah(event.ChangeAmt), formatRupiah(p1g.SellPrice), trendEmoji(event.BuybackTrend),
+		formatRupiah(event.BuybackChangeAmt), formatRupiah(spread), spreadPct, event.Trend)
 
 	switch tt {
 	case models.ThreadPriceUpdate:
 		return base + `
-TYPE: Price Update with Brief Analysis
-Write about today's gold price movement. Include the price data naturally (not as a list).
-Add 2-3 sentences of analysis about WHY it moved or what it means for investors.
-End with a soft CTA: "follow buat update harian" or similar. DO NOT mention Telegram or bot.`
+TYPE: Structured Price Update
+You MUST follow this EXACT format (no deviations, no extra sections):
+
+Harga Emas Antam Hari Ini
+
+Tanggal: {copy from DATA}
+Harga: Rp {buy price} / gr ({trend emoji} Rp {change})
+Buyback: Rp {sell price} / gr ({buyback trend emoji} Rp {buyback change})
+Spread: Rp {spread} ({spread pct}%)
+
+Trend: {one-line trend: bullish/bearish/sideways with brief reason}
+
+{2-3 sentences of market insight — WHY it moved, what global factors, what it means for investors}
+
+{Soft CTA like "follow buat update harian" or "pantau terus" — DO NOT mention Telegram or bot}
+
+{2-3 relevant hashtags}
+
+IMPORTANT:
+- Use ▲ for up, ▼ for down, — for stable
+- Keep insight concise and human, not robotic
+- Hashtags examples: #EmasAntam #HargaEmas #InvestasiEmas`
 
 	case models.ThreadTip:
 		return base + `
@@ -160,7 +183,12 @@ func (g *ContentGenerator) fallbackThreadsContent(event *models.GoldScrapedEvent
 	p := getPrice(event, 1)
 	switch tt {
 	case models.ThreadPriceUpdate:
-		return fmt.Sprintf("Emas Antam hari ini Rp %s/gr (%s). %s dari kemarin. Pantau terus pergerakan harga, follow buat update harian!\n\n#EmasAntam #Investasi", formatRupiah(p.BuyPrice), formatRupiah(event.ChangeAmt), event.Trend)
+		spread := p.BuyPrice - p.SellPrice
+		spreadPct := float64(spread) / float64(p.BuyPrice) * 100
+		return fmt.Sprintf("Harga Emas Antam Hari Ini\n\nTanggal: %s\nHarga: Rp %s / gr (%s Rp %s)\nBuyback: Rp %s / gr (%s Rp %s)\nSpread: Rp %s (%.2f%%)\n\nTrend: %s\n\nPantau terus pergerakan harga emas, follow buat update harian!\n\n#EmasAntam #HargaEmas #InvestasiEmas",
+			event.Date, formatRupiah(p.BuyPrice), trendEmoji(event.Trend), formatRupiah(event.ChangeAmt),
+			formatRupiah(p.SellPrice), trendEmoji(event.BuybackTrend), formatRupiah(event.BuybackChangeAmt),
+			formatRupiah(spread), spreadPct, event.Trend)
 	case models.ThreadTip:
 		return "Tips investasi emas: jangan tunggu harga turun sempurna. Beli rutin (DCA) lebih aman dari timing market. Mulai dari 1 gram aja udah bisa.\n\n#TipsInvestasi #Emas"
 	case models.ThreadEngagement:
