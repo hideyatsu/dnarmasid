@@ -275,13 +275,19 @@ func sendHtNotification(text string) {
 			notifyToken = "ht_sec_59b5ddf0fa1e60346f4d60c8fc2ead55c4e1afd67b30f56b"
 		}
 
+		appEnv := os.Getenv("APP_ENV")
+		if appEnv == "" {
+			appEnv = "development"
+		}
+
 		payload := map[string]string{
-			"source":     "dnarmasid-scraper",
-			"target":     "log",
-			"channel":    "telegram",
-			"priority":   "default",
-			"parse_mode": "HTML",
-			"text":       text,
+			"source":      "dnarmasid-scraper",
+			"target":      "log",
+			"channel":     "telegram",
+			"priority":    "default",
+			"parse_mode":  "HTML",
+			"environment": appEnv,
+			"text":        text,
 		}
 
 		if err := sendHTTPRequest(notifyURL, notifyToken, payload); err != nil {
